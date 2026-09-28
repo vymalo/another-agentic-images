@@ -173,6 +173,13 @@ RUN flutter config --no-analytics --no-cli-animations \
 # corepack picks each project's own `packageManager` version, so both must
 # work. ~/.cache is persisted by the deployment; ~/.config is not mounted,
 # so these files survive from the image.
+# Parents of the deployment's nested mount points, created here as openhands.
+# A container runtime creates any missing parent of a mount target as root, so
+# mounting ~/.local/share/opencode without this leaves ~/.local and
+# ~/.local/share root-owned and every other tool writing there (pipx, uv
+# tools, CLIs' data dirs) fails with EACCES.
+RUN mkdir -p /home/openhands/.local/share /home/openhands/.local/bin
+
 RUN mkdir -p /home/openhands/.config/pnpm \
  && printf 'store-dir=/home/openhands/.cache/pnpm-store\n' > /home/openhands/.config/pnpm/rc \
  && printf 'storeDir: /home/openhands/.cache/pnpm-store\n' > /home/openhands/.config/pnpm/config.yaml
@@ -185,4 +192,5 @@ RUN bash -lc 'set -e; \
       claude --version; codex --version; opencode --version; command -v claude-agent-acp; command -v codex-acp; \
       test "$(corepack pnpm@10.33.0 config get store-dir)" = /home/openhands/.cache/pnpm-store; \
       test "$(pnpm config get store-dir)" = /home/openhands/.cache/pnpm-store; \
+      test -O /home/openhands/.local/share; \
       test "$(id -u)" = 10001'
