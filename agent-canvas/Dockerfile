@@ -37,14 +37,12 @@ ARG RUST_TOOLCHAIN=1.98.1
 ARG FLUTTER_VERSION=3.44.4
 ARG SCCACHE_VERSION=0.16.0
 ARG CARGO_BINSTALL_VERSION=v1.23.0
-# Coding-agent CLIs + the ACP adapters Agent Canvas launches for them
-# (`npx -y @agentclientprotocol/claude-agent-acp`, `npx -y @zed-industries/codex-acp`).
-# Resolved from the npm registry; bump deliberately (Claude Code's own
-# auto-updater is disabled below — the global install is root-owned).
+# Coding-agent CLIs (for signing in and for terminal use). The ACP adapters
+# Agent Canvas drives them through are NOT installed here — upstream already
+# bundles them (see the install step). Resolved from the npm registry; bump
+# deliberately (Claude Code's auto-updater is disabled — root-owned install).
 ARG CLAUDE_CODE_VERSION=2.1.283
 ARG CODEX_VERSION=0.158.0
-ARG CLAUDE_AGENT_ACP_VERSION=0.81.2
-ARG CODEX_ACP_VERSION=0.16.0
 
 LABEL org.opencontainers.image.source="https://github.com/vymalo/openhand-images" \
       org.opencontainers.image.description="OpenHands Agent Canvas with Rust, Flutter/Dart and Node toolchains baked in" \
@@ -112,21 +110,22 @@ RUN curl --proto '=https' --tlsv1.2 -fsSL \
 # ---- pnpm/yarn shims (corepack ships with the base image's Node) --------
 RUN corepack enable
 
-# ---- Coding agents: Claude Code, Codex, and their ACP adapters ----------
-# Global installs under /usr/local, because `npx -y <pkg>` (no version) —
-# exactly how Agent Canvas starts an ACP agent — reuses a globally installed
-# package instead of downloading one (verified with npm 11, --offline). So
-# the adapters start instantly and offline, and `claude` / `codex` are on
-# PATH for signing in from the terminal (a user `npm i -g` hits EACCES on
-# this root-owned prefix, and would be lost on restart anyway).
+# ---- Coding agents: Claude Code and Codex CLIs --------------------------
+# Upstream already ships the ACP adapters Agent Canvas drives: /acp-node holds
+# @agentclientprotocol/claude-agent-acp and @agentclientprotocol/codex-acp (plus
+# @google/gemini-cli), exposed as /usr/local/bin/{claude-agent-acp,codex-acp,
+# gemini} wrappers. Those are the versions Agent Canvas is released against,
+# so they are left alone (installing ours collided: "File exists:
+# /usr/local/bin/codex-acp"). What upstream lacks is the standalone CLIs you
+# sign in with — `claude` (/login) and `codex login` — so a user `npm i -g`
+# hit EACCES on this root-owned prefix (and would be lost on restart anyway).
+# The adapters read the same on-disk logins the CLIs write
+# ($CLAUDE_CONFIG_DIR/.credentials.json, ~/.codex/auth.json), which the
+# deployment persists; nothing here is baked into the image.
 # Scripts stay enabled: Claude Code's postinstall selects its native binary.
-# Logins/config are NOT baked: they live in ~/.claude (CLAUDE_CONFIG_DIR) and
-# ~/.codex, which the deployment persists.
 RUN npm install -g --no-fund --no-audit \
       "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}" \
       "@openai/codex@${CODEX_VERSION}" \
-      "@agentclientprotocol/claude-agent-acp@${CLAUDE_AGENT_ACP_VERSION}" \
-      "@zed-industries/codex-acp@${CODEX_ACP_VERSION}" \
  && npm cache clean --force
 ENV DISABLE_AUTOUPDATER=1
 

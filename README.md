@@ -11,7 +11,7 @@ Container images for self-hosting [OpenHands](https://github.com/OpenHands/OpenH
 | Rust | rustup + toolchain `1.98.1` (rustfmt, clippy, rust-src, llvm-tools-preview, `wasm32-unknown-unknown`), `just`, `cargo-nextest`, `cargo-deny`, `sccache` |
 | Flutter/Dart | Flutter SDK `3.44.4` (bundles Dart), web artifacts precached |
 | Node | upstream Node 24 + corepack shims (pnpm/yarn resolve each project's `packageManager`); pnpm store in `~/.cache/pnpm-store` |
-| Coding agents | Claude Code `2.1.283`, Codex `0.158.0`, and the ACP adapters Agent Canvas launches (`claude-agent-acp` `0.81.2`, `codex-acp` `0.16.0`), global under `/usr/local` so `npx -y` reuses them offline |
+| Coding agents | Claude Code `2.1.283` and Codex `0.158.0` CLIs (sign in, terminal use). The ACP adapters Agent Canvas drives them through (`claude-agent-acp`, `codex-acp`, plus `gemini`) come from upstream's `/acp-node` |
 | Native deps | clang, lld, cmake, pkg-config, protobuf-compiler |
 
 **Why:** the upstream image has no Rust or Flutter, so its agent installs them at run time into `$HOME` on the container filesystem. Every restart then throws them away.
