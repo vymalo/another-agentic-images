@@ -37,6 +37,12 @@ ARG RUST_TOOLCHAIN=1.98.1
 ARG FLUTTER_VERSION=3.44.4
 ARG SCCACHE_VERSION=0.16.0
 ARG CARGO_BINSTALL_VERSION=v1.23.0
+# Coding-agent CLIs (for signing in and for terminal use). The ACP adapters
+# Agent Canvas drives them through are NOT installed here — upstream already
+# bundles them (see the install step). Resolved from the npm registry; bump
+# deliberately (Claude Code's auto-updater is disabled — root-owned install).
+ARG CLAUDE_CODE_VERSION=2.1.283
+ARG CODEX_VERSION=0.158.0
 
 LABEL org.opencontainers.image.source="https://github.com/vymalo/openhand-images" \
       org.opencontainers.image.description="OpenHands Agent Canvas with Rust, Flutter/Dart and Node toolchains baked in" \
@@ -104,6 +110,25 @@ RUN curl --proto '=https' --tlsv1.2 -fsSL \
 # ---- pnpm/yarn shims (corepack ships with the base image's Node) --------
 RUN corepack enable
 
+# ---- Coding agents: Claude Code and Codex CLIs --------------------------
+# Upstream already ships the ACP adapters Agent Canvas drives: /acp-node holds
+# @agentclientprotocol/claude-agent-acp and @agentclientprotocol/codex-acp (plus
+# @google/gemini-cli), exposed as /usr/local/bin/{claude-agent-acp,codex-acp,
+# gemini} wrappers. Those are the versions Agent Canvas is released against,
+# so they are left alone (installing ours collided: "File exists:
+# /usr/local/bin/codex-acp"). What upstream lacks is the standalone CLIs you
+# sign in with — `claude` (/login) and `codex login` — so a user `npm i -g`
+# hit EACCES on this root-owned prefix (and would be lost on restart anyway).
+# The adapters read the same on-disk logins the CLIs write
+# ($CLAUDE_CONFIG_DIR/.credentials.json, ~/.codex/auth.json), which the
+# deployment persists; nothing here is baked into the image.
+# Scripts stay enabled: Claude Code's postinstall selects its native binary.
+RUN npm install -g --no-fund --no-audit \
+      "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}" \
+      "@openai/codex@${CODEX_VERSION}" \
+ && npm cache clean --force
+ENV DISABLE_AUTOUPDATER=1
+
 # The agent runs as openhands (10001) and may add toolchains/components or
 # let Flutter update its cache at run time (lost on restart, but it must not
 # fail on permissions).
@@ -116,6 +141,7 @@ RUN printf '%s\n' \
       'export RUSTUP_HOME=/opt/rustup' \
       'export FLUTTER_HOME=/opt/flutter' \
       'export COREPACK_ENABLE_DOWNLOAD_PROMPT=0' \
+      'export DISABLE_AUTOUPDATER=1' \
       'case ":$PATH:" in *:/opt/cargo/bin:*) ;; *) PATH="$HOME/.cargo/bin:/opt/cargo/bin:/opt/flutter/bin:/opt/flutter/bin/cache/dart-sdk/bin:$PATH" ;; esac' \
       'export PATH' \
     > /etc/profile.d/10-toolchains.sh
@@ -128,9 +154,19 @@ RUN flutter config --no-analytics --no-cli-animations \
  && dart --disable-analytics \
  && flutter precache --web --no-android --no-ios --no-linux --no-macos --no-windows --no-fuchsia
 
+# pnpm's store location, in pnpm's OWN global rc ($XDG_CONFIG_HOME/pnpm/rc),
+# not an `npm_config_store_dir` env var: npm reads every npm_config_* too and
+# warns "Unknown env config store-dir" on each run. ~/.cache is persisted by
+# the deployment; ~/.config is not mounted, so this file survives from the
+# image.
+RUN mkdir -p /home/openhands/.config/pnpm \
+ && printf 'store-dir=/home/openhands/.cache/pnpm-store\n' > /home/openhands/.config/pnpm/rc
+
 # Smoke test, in a LOGIN shell — the environment the agent actually gets.
 RUN bash -lc 'set -e; \
       rustc --version; cargo --version; cargo clippy --version; rustfmt --version; \
       just --version; cargo nextest --version; cargo deny --version; sccache --version; \
       flutter --version; dart --version; node --version; command -v pnpm; \
+      claude --version; codex --version; command -v claude-agent-acp; command -v codex-acp; \
+      test "$(pnpm config get store-dir)" = /home/openhands/.cache/pnpm-store; \
       test "$(id -u)" = 10001'
