@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 #
-# ghcr.io/vymalo/openhand-images/agent-canvas — OpenHands Agent Canvas with
+# ghcr.io/vymalo/another-agentic-images/agent-canvas — OpenHands Agent Canvas with
 # the Rust + Flutter/Dart + Node toolchains baked in.
 #
 # Why: the upstream image ships Node, Python, git and gcc, but no Rust or
@@ -43,8 +43,12 @@ ARG CARGO_BINSTALL_VERSION=v1.23.0
 # deliberately (Claude Code's auto-updater is disabled — root-owned install).
 ARG CLAUDE_CODE_VERSION=2.1.283
 ARG CODEX_VERSION=0.158.0
+# OpenCode (npm `opencode-ai`): the TUI/CLI, `opencode serve`/`web`, and
+# `opencode acp` (ACP over stdio) — the coding engine another-agentic-platform's
+# harness drives. Its postinstall selects the native binary, so scripts stay on.
+ARG OPENCODE_VERSION=1.18.33
 
-LABEL org.opencontainers.image.source="https://github.com/vymalo/openhand-images" \
+LABEL org.opencontainers.image.source="https://github.com/vymalo/another-agentic-images" \
       org.opencontainers.image.description="OpenHands Agent Canvas with Rust, Flutter/Dart and Node toolchains baked in" \
       org.opencontainers.image.licenses="MIT"
 
@@ -121,13 +125,19 @@ RUN corepack enable
 # hit EACCES on this root-owned prefix (and would be lost on restart anyway).
 # The adapters read the same on-disk logins the CLIs write
 # ($CLAUDE_CONFIG_DIR/.credentials.json, ~/.codex/auth.json), which the
-# deployment persists; nothing here is baked into the image.
-# Scripts stay enabled: Claude Code's postinstall selects its native binary.
+# deployment persists; nothing here is baked into the image. OpenCode keeps its
+# login in ~/.local/share/opencode/auth.json (plus sessions and logs there),
+# config in ~/.config/opencode and cache in ~/.cache/opencode — also for the
+# deployment to persist.
+# Scripts stay enabled: Claude Code's and OpenCode's postinstalls select their
+# native binaries. Self-updaters are off (root-owned install; bump via ARGs).
 RUN npm install -g --no-fund --no-audit \
       "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}" \
       "@openai/codex@${CODEX_VERSION}" \
+      "opencode-ai@${OPENCODE_VERSION}" \
  && npm cache clean --force
-ENV DISABLE_AUTOUPDATER=1
+ENV DISABLE_AUTOUPDATER=1 \
+    OPENCODE_DISABLE_AUTOUPDATE=1
 
 # The agent runs as openhands (10001) and may add toolchains/components or
 # let Flutter update its cache at run time (lost on restart, but it must not
@@ -142,6 +152,7 @@ RUN printf '%s\n' \
       'export FLUTTER_HOME=/opt/flutter' \
       'export COREPACK_ENABLE_DOWNLOAD_PROMPT=0' \
       'export DISABLE_AUTOUPDATER=1' \
+      'export OPENCODE_DISABLE_AUTOUPDATE=1' \
       'case ":$PATH:" in *:/opt/cargo/bin:*) ;; *) PATH="$HOME/.cargo/bin:/opt/cargo/bin:/opt/flutter/bin:/opt/flutter/bin/cache/dart-sdk/bin:$PATH" ;; esac' \
       'export PATH' \
     > /etc/profile.d/10-toolchains.sh
@@ -171,7 +182,7 @@ RUN bash -lc 'set -e; \
       rustc --version; cargo --version; cargo clippy --version; rustfmt --version; \
       just --version; cargo nextest --version; cargo deny --version; sccache --version; \
       flutter --version; dart --version; node --version; command -v pnpm; \
-      claude --version; codex --version; command -v claude-agent-acp; command -v codex-acp; \
+      claude --version; codex --version; opencode --version; command -v claude-agent-acp; command -v codex-acp; \
       test "$(corepack pnpm@10.33.0 config get store-dir)" = /home/openhands/.cache/pnpm-store; \
       test "$(pnpm config get store-dir)" = /home/openhands/.cache/pnpm-store; \
       test "$(id -u)" = 10001'

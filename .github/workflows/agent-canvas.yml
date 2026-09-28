@@ -1,6 +1,6 @@
 name: Build agent-canvas image
 
-# Builds ghcr.io/vymalo/openhand-images/agent-canvas from agent-canvas/Dockerfile.
+# Builds ghcr.io/vymalo/another-agentic-images/agent-canvas from agent-canvas/Dockerfile.
 #
 # Runs on GitHub-hosted runners: nothing here should depend on the
 # self-hosted fleet. The image adds a multi-GB toolchain on top of the
@@ -36,7 +36,7 @@ permissions:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: vymalo/openhand-images/agent-canvas
+  IMAGE_NAME: vymalo/another-agentic-images/agent-canvas
 
 concurrency:
   group: agent-canvas-${{ github.ref }}
