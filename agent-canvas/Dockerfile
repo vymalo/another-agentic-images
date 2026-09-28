@@ -154,13 +154,17 @@ RUN flutter config --no-analytics --no-cli-animations \
  && dart --disable-analytics \
  && flutter precache --web --no-android --no-ios --no-linux --no-macos --no-windows --no-fuchsia
 
-# pnpm's store location, in pnpm's OWN global rc ($XDG_CONFIG_HOME/pnpm/rc),
-# not an `npm_config_store_dir` env var: npm reads every npm_config_* too and
-# warns "Unknown env config store-dir" on each run. ~/.cache is persisted by
-# the deployment; ~/.config is not mounted, so this file survives from the
-# image.
+# pnpm's store location, in pnpm's OWN global config, not an
+# `npm_config_store_dir` env var: npm reads every npm_config_* too and warns
+# "Unknown env config store-dir" on each run. Two files, because the format
+# changed between majors (verified): pnpm 10 reads the ini `rc` and ignores
+# config.yaml; pnpm 12 reads `config.yaml` (storeDir) and ignores `rc`.
+# corepack picks each project's own `packageManager` version, so both must
+# work. ~/.cache is persisted by the deployment; ~/.config is not mounted,
+# so these files survive from the image.
 RUN mkdir -p /home/openhands/.config/pnpm \
- && printf 'store-dir=/home/openhands/.cache/pnpm-store\n' > /home/openhands/.config/pnpm/rc
+ && printf 'store-dir=/home/openhands/.cache/pnpm-store\n' > /home/openhands/.config/pnpm/rc \
+ && printf 'storeDir: /home/openhands/.cache/pnpm-store\n' > /home/openhands/.config/pnpm/config.yaml
 
 # Smoke test, in a LOGIN shell — the environment the agent actually gets.
 RUN bash -lc 'set -e; \
@@ -168,5 +172,6 @@ RUN bash -lc 'set -e; \
       just --version; cargo nextest --version; cargo deny --version; sccache --version; \
       flutter --version; dart --version; node --version; command -v pnpm; \
       claude --version; codex --version; command -v claude-agent-acp; command -v codex-acp; \
+      test "$(corepack pnpm@10.33.0 config get store-dir)" = /home/openhands/.cache/pnpm-store; \
       test "$(pnpm config get store-dir)" = /home/openhands/.cache/pnpm-store; \
       test "$(id -u)" = 10001'
