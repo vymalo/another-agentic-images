@@ -1,0 +1,21 @@
+{
+  "name": "messages-error-server-error-header",
+  "priority": 1,
+  "request": {
+    "method": "POST",
+    "urlPath": "/v1/messages",
+    "headers": {
+      "X-Mock-Scenario": {
+        "equalTo": "server-error"
+      }
+    }
+  },
+  "response": {
+    "status": 500,
+    "headers": {
+      "Content-Type": "application/json",
+      "request-id": "req_mock_01"
+    },
+    "bodyFileName": "error-server-error.json"
+  }
+}

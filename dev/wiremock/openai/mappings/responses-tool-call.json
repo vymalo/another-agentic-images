@@ -1,0 +1,23 @@
+{
+  "name": "responses-tool-call",
+  "priority": 3,
+  "request": {
+    "method": "POST",
+    "urlPath": "/v1/responses",
+    "bodyPatterns": [
+      {
+        "contains": "[mock:tool-call]"
+      },
+      {
+        "matchesJsonPath": "$[?(@.stream != true)]"
+      }
+    ]
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "bodyFileName": "responses-tool-call.json"
+  }
+}

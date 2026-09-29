@@ -1,0 +1,25 @@
+{
+  "name": "messages-tool-use-stream",
+  "priority": 3,
+  "request": {
+    "method": "POST",
+    "urlPath": "/v1/messages",
+    "bodyPatterns": [
+      {
+        "contains": "[mock:tool-call]"
+      },
+      {
+        "matchesJsonPath": "$[?(@.stream == true)]"
+      }
+    ]
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache",
+      "request-id": "req_mock_01"
+    },
+    "bodyFileName": "messages-stream-tool-use.txt"
+  }
+}

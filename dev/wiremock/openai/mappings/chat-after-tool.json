@@ -1,0 +1,23 @@
+{
+  "name": "chat-after-tool",
+  "priority": 2,
+  "request": {
+    "method": "POST",
+    "urlPath": "/v1/chat/completions",
+    "bodyPatterns": [
+      {
+        "matchesJsonPath": "$.messages[?(@.role == 'tool')]"
+      },
+      {
+        "matchesJsonPath": "$[?(@.stream != true)]"
+      }
+    ]
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "bodyFileName": "chat-after-tool.json"
+  }
+}

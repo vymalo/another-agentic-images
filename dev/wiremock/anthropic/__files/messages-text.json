@@ -1,0 +1,18 @@
+{
+  "id": "msg_mock_01",
+  "type": "message",
+  "role": "assistant",
+  "model": "mock-claude",
+  "content": [
+    {
+      "type": "text",
+      "text": "Hello from mock-anthropic. This is a canned answer."
+    }
+  ],
+  "stop_reason": "end_turn",
+  "stop_sequence": null,
+  "usage": {
+    "input_tokens": 12,
+    "output_tokens": 8
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "name": "responses-error-server-error-text",
+  "priority": 1,
+  "request": {
+    "method": "POST",
+    "urlPath": "/v1/responses",
+    "bodyPatterns": [
+      {
+        "contains": "[mock:server-error]"
+      }
+    ]
+  },
+  "response": {
+    "status": 500,
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "bodyFileName": "error-server-error.json"
+  }
+}

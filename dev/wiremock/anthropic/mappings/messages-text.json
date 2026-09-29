@@ -1,0 +1,21 @@
+{
+  "name": "messages-text",
+  "priority": 10,
+  "request": {
+    "method": "POST",
+    "urlPath": "/v1/messages",
+    "bodyPatterns": [
+      {
+        "matchesJsonPath": "$[?(@.stream != true)]"
+      }
+    ]
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "Content-Type": "application/json",
+      "request-id": "req_mock_01"
+    },
+    "bodyFileName": "messages-text.json"
+  }
+}

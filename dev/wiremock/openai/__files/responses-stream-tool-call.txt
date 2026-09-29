@@ -1,0 +1,21 @@
+event: response.created
+data: {"type":"response.created","sequence_number":0,"response":{"id":"resp_mock_01","object":"response","created_at":1700000000,"status":"in_progress","model":"mock-gpt","output":[],"parallel_tool_calls":true,"tool_choice":"auto","tools":[],"usage":null}}
+
+event: response.in_progress
+data: {"type":"response.in_progress","sequence_number":1,"response":{"id":"resp_mock_01","object":"response","created_at":1700000000,"status":"in_progress","model":"mock-gpt","output":[],"parallel_tool_calls":true,"tool_choice":"auto","tools":[],"usage":null}}
+
+event: response.output_item.added
+data: {"type":"response.output_item.added","sequence_number":2,"output_index":0,"item":{"id":"fc_mock_01","type":"function_call","status":"in_progress","name":"exec_command","call_id":"call_mock_1","arguments":""}}
+
+event: response.function_call_arguments.delta
+data: {"type":"response.function_call_arguments.delta","sequence_number":3,"item_id":"fc_mock_01","output_index":0,"delta":"{\"cmd\": \"printf 'hello from mock-openai\\\\n' > hello.txt\"}"}
+
+event: response.function_call_arguments.done
+data: {"type":"response.function_call_arguments.done","sequence_number":4,"item_id":"fc_mock_01","output_index":0,"arguments":"{\"cmd\": \"printf 'hello from mock-openai\\\\n' > hello.txt\"}"}
+
+event: response.output_item.done
+data: {"type":"response.output_item.done","sequence_number":5,"output_index":0,"item":{"id":"fc_mock_01","type":"function_call","status":"completed","name":"exec_command","call_id":"call_mock_1","arguments":"{\"cmd\": \"printf 'hello from mock-openai\\\\n' > hello.txt\"}"}}
+
+event: response.completed
+data: {"type":"response.completed","sequence_number":6,"response":{"id":"resp_mock_01","object":"response","created_at":1700000000,"status":"completed","model":"mock-gpt","output":[{"id":"fc_mock_01","type":"function_call","status":"completed","name":"exec_command","call_id":"call_mock_1","arguments":"{\"cmd\": \"printf 'hello from mock-openai\\\\n' > hello.txt\"}"}],"parallel_tool_calls":true,"tool_choice":"auto","tools":[],"usage":{"input_tokens":12,"input_tokens_details":{"cached_tokens":0},"output_tokens":8,"output_tokens_details":{"reasoning_tokens":0},"total_tokens":20}}}
+

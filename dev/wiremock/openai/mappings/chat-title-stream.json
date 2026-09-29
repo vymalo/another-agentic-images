@@ -1,0 +1,24 @@
+{
+  "name": "chat-title-stream",
+  "priority": 2,
+  "request": {
+    "method": "POST",
+    "urlPath": "/v1/chat/completions",
+    "bodyPatterns": [
+      {
+        "contains": "You are a title generator"
+      },
+      {
+        "matchesJsonPath": "$[?(@.stream == true)]"
+      }
+    ]
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache"
+    },
+    "bodyFileName": "chat-stream-title.txt"
+  }
+}

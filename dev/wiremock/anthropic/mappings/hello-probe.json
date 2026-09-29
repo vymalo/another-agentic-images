@@ -1,0 +1,10 @@
+{
+  "name": "hello-probe",
+  "request": {
+    "method": "HEAD",
+    "urlPath": "/api/hello"
+  },
+  "response": {
+    "status": 200
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "name": "messages-text-stream",
+  "priority": 10,
+  "request": {
+    "method": "POST",
+    "urlPath": "/v1/messages",
+    "bodyPatterns": [
+      {
+        "matchesJsonPath": "$[?(@.stream == true)]"
+      }
+    ]
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache",
+      "request-id": "req_mock_01"
+    },
+    "bodyFileName": "messages-stream-text.txt"
+  }
+}

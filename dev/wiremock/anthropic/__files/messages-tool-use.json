@@ -1,0 +1,23 @@
+{
+  "id": "msg_mock_01",
+  "type": "message",
+  "role": "assistant",
+  "model": "mock-claude",
+  "content": [
+    {
+      "type": "tool_use",
+      "id": "toolu_mock_01",
+      "name": "Bash",
+      "input": {
+        "command": "printf 'hello from mock-anthropic\\n' > hello.txt",
+        "description": "Create hello.txt"
+      }
+    }
+  ],
+  "stop_reason": "tool_use",
+  "stop_sequence": null,
+  "usage": {
+    "input_tokens": 12,
+    "output_tokens": 8
+  }
+}

@@ -1,0 +1,4 @@
+# Used by `shellcheck dev/*.sh` (CI: compose.yml): scripts source their siblings.
+external-sources=true
+source-path=SCRIPTDIR
+shell=sh

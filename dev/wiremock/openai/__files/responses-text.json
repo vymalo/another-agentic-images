@@ -1,0 +1,36 @@
+{
+  "id": "resp_mock_01",
+  "object": "response",
+  "created_at": 1700000000,
+  "status": "completed",
+  "model": "mock-gpt",
+  "output": [
+    {
+      "id": "msg_mock_01",
+      "type": "message",
+      "status": "completed",
+      "role": "assistant",
+      "content": [
+        {
+          "type": "output_text",
+          "text": "Hello from mock-openai. This is a canned answer.",
+          "annotations": []
+        }
+      ]
+    }
+  ],
+  "parallel_tool_calls": true,
+  "tool_choice": "auto",
+  "tools": [],
+  "usage": {
+    "input_tokens": 12,
+    "input_tokens_details": {
+      "cached_tokens": 0
+    },
+    "output_tokens": 8,
+    "output_tokens_details": {
+      "reasoning_tokens": 0
+    },
+    "total_tokens": 20
+  }
+}
