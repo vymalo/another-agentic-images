@@ -1,0 +1,14 @@
+{
+  "name": "models",
+  "request": {
+    "method": "GET",
+    "urlPath": "/v1/models"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "bodyFileName": "models.json"
+  }
+}

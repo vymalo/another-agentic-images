@@ -1,0 +1,8 @@
+{
+  "error": {
+    "message": "Rate limit reached (mock-openai, scenario rate-limit).",
+    "type": "rate_limit_exceeded",
+    "param": null,
+    "code": "rate_limit_exceeded"
+  }
+}

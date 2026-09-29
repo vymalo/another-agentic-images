@@ -1,0 +1,15 @@
+{
+  "name": "count-tokens",
+  "request": {
+    "method": "POST",
+    "urlPath": "/v1/messages/count_tokens"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "Content-Type": "application/json",
+      "request-id": "req_mock_01"
+    },
+    "bodyFileName": "count-tokens.json"
+  }
+}

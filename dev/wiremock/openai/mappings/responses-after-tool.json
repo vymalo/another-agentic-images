@@ -1,0 +1,23 @@
+{
+  "name": "responses-after-tool",
+  "priority": 2,
+  "request": {
+    "method": "POST",
+    "urlPath": "/v1/responses",
+    "bodyPatterns": [
+      {
+        "matchesJsonPath": "$.input[?(@.type == 'function_call_output')]"
+      },
+      {
+        "matchesJsonPath": "$[?(@.stream != true)]"
+      }
+    ]
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "bodyFileName": "responses-after-tool.json"
+  }
+}

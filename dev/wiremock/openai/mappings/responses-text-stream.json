@@ -1,0 +1,21 @@
+{
+  "name": "responses-text-stream",
+  "priority": 10,
+  "request": {
+    "method": "POST",
+    "urlPath": "/v1/responses",
+    "bodyPatterns": [
+      {
+        "matchesJsonPath": "$[?(@.stream == true)]"
+      }
+    ]
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache"
+    },
+    "bodyFileName": "responses-stream-text.txt"
+  }
+}

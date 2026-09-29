@@ -1,0 +1,23 @@
+{
+  "name": "chat-title",
+  "priority": 2,
+  "request": {
+    "method": "POST",
+    "urlPath": "/v1/chat/completions",
+    "bodyPatterns": [
+      {
+        "contains": "You are a title generator"
+      },
+      {
+        "matchesJsonPath": "$[?(@.stream != true)]"
+      }
+    ]
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "bodyFileName": "chat-title.json"
+  }
+}

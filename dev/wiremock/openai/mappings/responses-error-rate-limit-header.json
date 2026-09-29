@@ -1,0 +1,21 @@
+{
+  "name": "responses-error-rate-limit-header",
+  "priority": 1,
+  "request": {
+    "method": "POST",
+    "urlPath": "/v1/responses",
+    "headers": {
+      "X-Mock-Scenario": {
+        "equalTo": "rate-limit"
+      }
+    }
+  },
+  "response": {
+    "status": 429,
+    "headers": {
+      "Content-Type": "application/json",
+      "Retry-After": "1"
+    },
+    "bodyFileName": "error-rate-limit.json"
+  }
+}

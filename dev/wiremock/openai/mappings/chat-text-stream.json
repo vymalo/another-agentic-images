@@ -1,0 +1,21 @@
+{
+  "name": "chat-text-stream",
+  "priority": 10,
+  "request": {
+    "method": "POST",
+    "urlPath": "/v1/chat/completions",
+    "bodyPatterns": [
+      {
+        "matchesJsonPath": "$[?(@.stream == true)]"
+      }
+    ]
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache"
+    },
+    "bodyFileName": "chat-stream-text.txt"
+  }
+}

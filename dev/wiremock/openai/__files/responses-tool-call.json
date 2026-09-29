@@ -1,0 +1,31 @@
+{
+  "id": "resp_mock_01",
+  "object": "response",
+  "created_at": 1700000000,
+  "status": "completed",
+  "model": "mock-gpt",
+  "output": [
+    {
+      "id": "fc_mock_01",
+      "type": "function_call",
+      "status": "completed",
+      "name": "exec_command",
+      "call_id": "call_mock_1",
+      "arguments": "{\"cmd\": \"printf 'hello from mock-openai\\\\n' > hello.txt\"}"
+    }
+  ],
+  "parallel_tool_calls": true,
+  "tool_choice": "auto",
+  "tools": [],
+  "usage": {
+    "input_tokens": 12,
+    "input_tokens_details": {
+      "cached_tokens": 0
+    },
+    "output_tokens": 8,
+    "output_tokens_details": {
+      "reasoning_tokens": 0
+    },
+    "total_tokens": 20
+  }
+}

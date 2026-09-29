@@ -1,0 +1,24 @@
+{
+  "name": "messages-after-tool",
+  "priority": 2,
+  "request": {
+    "method": "POST",
+    "urlPath": "/v1/messages",
+    "bodyPatterns": [
+      {
+        "matchesJsonPath": "$.messages[*].content[?(@.type == 'tool_result')]"
+      },
+      {
+        "matchesJsonPath": "$[?(@.stream != true)]"
+      }
+    ]
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "Content-Type": "application/json",
+      "request-id": "req_mock_01"
+    },
+    "bodyFileName": "messages-after-tool.json"
+  }
+}

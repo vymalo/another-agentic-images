@@ -1,0 +1,149 @@
+# Local testing for the images in this repo: the baked coding-agent CLIs
+# (OpenCode, Claude Code, Codex) talk to WireMock stand-ins instead of real
+# model providers, so you can try an image, or an "agent edits a repo" loop,
+# with no API key, no network and no cost. See README.md "Local testing".
+#
+#   docker compose up -d                       # mocks + the pinned workspace image
+#   docker compose exec workspace bash -l      # a login shell, as uid 10001
+#   docker compose run --rm workspace sh /dev-scripts/try-opencode.sh
+#
+# Profiles
+#   (none)        mock-openai, mock-anthropic, workspace (published image, pinned)
+#   build         workspace-build: the same image built from workspace/Dockerfile
+#   agent-canvas  agent-canvas (heavy): OpenHands Agent Canvas, pinned, port 8000
+#
+# The mocks: dev/wiremock/<name>/{mappings,__files}. Scenario switches (an
+# error, a tool call) are documented in README.md and dev/wiremock/README.md.
+#
+# Layout contract (CLAUDE.md): nothing here mounts anything under a runtime
+# user's $HOME. A mount target's missing parents are created as root and a
+# named volume over a directory the image lacks is root-owned, so the volumes go
+# on /work (workspace) and on the paths upstream declares as volumes
+# (agent-canvas). Scripts are mounted at /dev-scripts.
+#
+# Every credential below is a dummy. Ports bind to 127.0.0.1 only.
+
+name: another-agentic-images
+
+x-mock-env: &mock-env
+  # OpenCode: a custom @ai-sdk/openai-compatible provider pointing at mock-openai.
+  # (No "$schema" key: "$" is Compose interpolation syntax.)
+  OPENCODE_CONFIG_CONTENT: >-
+    {"provider":{"mock-openai":{"npm":"@ai-sdk/openai-compatible","name":"Mock OpenAI",
+    "options":{"baseURL":"http://mock-openai:8080/v1","apiKey":"sk-mock-not-a-real-key"},
+    "models":{"mock-gpt":{"name":"Mock GPT","tool_call":true,"limit":{"context":128000,"output":4096}}}}},
+    "model":"mock-openai/mock-gpt","small_model":"mock-openai/mock-gpt","autoupdate":false}
+  OPENCODE_DISABLE_MODELS_FETCH: "true"
+  # Claude Code: ANTHROPIC_BASE_URL + a dummy key. "sonnet" is an alias the CLI
+  # knows; the mock answers whatever model is asked for. Retries are capped so an
+  # error scenario fails in seconds, not minutes.
+  ANTHROPIC_BASE_URL: http://mock-anthropic:8080
+  ANTHROPIC_API_KEY: sk-ant-mock-not-a-real-key
+  ANTHROPIC_MODEL: sonnet
+  CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1"
+  CLAUDE_CODE_MAX_RETRIES: "2"
+  # Codex ignores OPENAI_BASE_URL (verified, 0.158.0): it needs a
+  # [model_providers.*] entry in its config.toml. dev/try-codex.sh writes one
+  # from these two variables; for hand use see README.md "Local testing".
+  OPENAI_API_KEY: sk-mock-not-a-real-key
+  MOCK_OPENAI_URL: http://mock-openai:8080/v1
+
+x-wiremock: &wiremock
+  image: wiremock/wiremock:3.13.2@sha256:0d4ecb3e4dc8213fd7a4d37d6a78f6e6b553a6d2e15bd51b0999781282ac61b3
+  restart: unless-stopped
+  healthcheck:
+    # curl ships in the wiremock image (its own HEALTHCHECK uses it).
+    test: ["CMD", "curl", "-fsS", "http://localhost:8080/__admin/health"]
+    interval: 2s
+    timeout: 3s
+    retries: 30
+    start_period: 5s
+
+x-workspace: &workspace
+  restart: unless-stopped
+  # The image's ENTRYPOINT is tini and it has no default process.
+  command: ["sleep", "infinity"]
+  working_dir: /work
+  environment: *mock-env
+  volumes:
+    - work:/work
+    - ./dev:/dev-scripts:ro
+  depends_on:
+    mock-openai:
+      condition: service_healthy
+    mock-anthropic:
+      condition: service_healthy
+
+services:
+  # OpenAI-compatible: POST /v1/chat/completions (OpenCode), POST /v1/responses
+  # (Codex), GET /v1/models. Text, tool call and error scenarios, streaming or not.
+  mock-openai:
+    <<: *wiremock
+    command: ["--port", "8080", "--disable-banner", "--max-request-journal-entries", "1000"]
+    ports:
+      - "127.0.0.1:${MOCK_OPENAI_PORT:-8081}:8080"
+    volumes:
+      - ./dev/wiremock/openai/mappings:/home/wiremock/mappings:ro
+      - ./dev/wiremock/openai/__files:/home/wiremock/__files:ro
+
+  # Anthropic Messages API: POST /v1/messages (Claude Code), count_tokens, models.
+  mock-anthropic:
+    <<: *wiremock
+    command: ["--port", "8080", "--disable-banner", "--max-request-journal-entries", "1000"]
+    ports:
+      - "127.0.0.1:${MOCK_ANTHROPIC_PORT:-8082}:8080"
+    volumes:
+      - ./dev/wiremock/anthropic/mappings:/home/wiremock/mappings:ro
+      - ./dev/wiremock/anthropic/__files:/home/wiremock/__files:ro
+
+  # The published workspace image, pinned by its immutable <rust>-<sha7> tag
+  # and digest (checked anonymously pullable on 2026-09-29).
+  workspace:
+    <<: *workspace
+    image: ghcr.io/vymalo/another-agentic-images/workspace:1.98.1-bc97d51@sha256:cdb75b130ca9d74a0142c5fb7d05664bfb6bc04c3e8adf2062a97afb2a26c35f
+
+  # The same image built from this checkout, as .github/workflows/workspace.yml
+  # builds it: repo root as the context, the optional build secret github_token
+  # (GITHUB_TOKEN_FILE=<file with a token> lifts cargo-binstall's GitHub rate
+  # limit; unset, the secret is empty, which install.sh treats as absent).
+  #   docker compose --profile build up -d --build workspace-build
+  workspace-build:
+    <<: *workspace
+    profiles: ["build"]
+    image: another-agentic-images/workspace:local
+    build:
+      context: .
+      dockerfile: workspace/Dockerfile
+      secrets: [github_token]
+
+  # OpenHands Agent Canvas + the toolchains, pinned by tag and digest. Heavy
+  # (a multi-GB pull). UI: http://localhost:8000/canvas (AGENT_CANVAS_BASE_PATH is
+  # /canvas in the image). Its default process runs; use `exec` for a shell.
+  # Ports, user and volumes are what the image config declares (verified
+  # 2026-09-29 from its OCI config: port 8000, user openhands, volumes
+  # ~/.openhands and /projects).
+  agent-canvas:
+    profiles: ["agent-canvas"]
+    image: ghcr.io/vymalo/another-agentic-images/agent-canvas:1.24.0-bc97d51@sha256:bda57169e424a9744023821d24f2bf59a2f2a7063a5ddfaf03b07b159aa321bd
+    restart: unless-stopped
+    environment: *mock-env
+    ports:
+      - "127.0.0.1:${AGENT_CANVAS_PORT:-8000}:8000"
+    volumes:
+      - openhands-state:/home/openhands/.openhands
+      - projects:/projects
+      - ./dev:/dev-scripts:ro
+    depends_on:
+      mock-openai:
+        condition: service_healthy
+      mock-anthropic:
+        condition: service_healthy
+
+volumes:
+  work:
+  openhands-state:
+  projects:
+
+secrets:
+  github_token:
+    file: ${GITHUB_TOKEN_FILE:-/dev/null}

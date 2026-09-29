@@ -1,0 +1,24 @@
+{
+  "name": "responses-tool-call-stream",
+  "priority": 3,
+  "request": {
+    "method": "POST",
+    "urlPath": "/v1/responses",
+    "bodyPatterns": [
+      {
+        "contains": "[mock:tool-call]"
+      },
+      {
+        "matchesJsonPath": "$[?(@.stream == true)]"
+      }
+    ]
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache"
+    },
+    "bodyFileName": "responses-stream-tool-call.txt"
+  }
+}

@@ -58,3 +58,49 @@ Consumed by `WhyThatFunction/home-os` (`charts/apps/values.yaml`, Application `a
 - `latest`: moving. There is no moving `<rust toolchain>` tag, because a Flutter or CLI bump would move it silently.
 
 **Bumping:** edit the `ARG`s at the top of [`workspace/Dockerfile`](workspace/Dockerfile), and the same pins in `agent-canvas/Dockerfile`. New tools go in `toolchains/install.sh` and in both smoke tests. Merging to `main` publishes.
+
+## Local testing
+
+[`compose.yaml`](compose.yaml) runs the images next to WireMock stand-ins for the model providers, so the baked CLIs (OpenCode, Claude Code, Codex) work with no API key, no network and no cost. It is for trying an image or a change, and for the "agent edits a repo" loop; it does not replace the image builds.
+
+```sh
+docker compose up -d                                   # mocks + the pinned workspace image
+docker compose exec workspace bash -l                  # a login shell in it, as uid 10001
+docker compose run --rm workspace sh /dev-scripts/try-opencode.sh   # or try-claude.sh, try-codex.sh
+sh dev/probe-mocks.sh                                  # curl every mock endpoint and scenario, from the host
+docker compose down -v                                 # stop and drop the volumes
+```
+
+| Service | Profile | What |
+|---|---|---|
+| `mock-openai` | (default) | OpenAI-compatible: `POST /v1/chat/completions` (OpenCode), `POST /v1/responses` (Codex), `GET /v1/models`; on `127.0.0.1:8081` |
+| `mock-anthropic` | (default) | Anthropic Messages API: `POST /v1/messages`, `count_tokens`, `GET /v1/models` (Claude Code); on `127.0.0.1:8082` |
+| `workspace` | (default) | The published image, pinned to `1.98.1-bc97d51` by tag and digest; `sleep infinity`, volume `work` on `/work` |
+| `workspace-build` | `build` | The same image built from [`workspace/Dockerfile`](workspace/Dockerfile) with the repo root as context: `docker compose --profile build up -d --build workspace-build`. `GITHUB_TOKEN_FILE=<file>` supplies the optional `github_token` build secret |
+| `agent-canvas` | `agent-canvas` | The published image (multi-GB), pinned by tag and digest: UI at <http://localhost:8000/canvas> |
+
+Only the mocks: `docker compose up -d --wait mock-openai mock-anthropic`. Host ports come from `MOCK_OPENAI_PORT`, `MOCK_ANTHROPIC_PORT` and `AGENT_CANVAS_PORT`; all bind to `127.0.0.1`.
+
+**Wiring.** The services carry the environment that points each CLI at its mock, with dummy keys:
+
+| CLI | How it reaches the mock | Notes |
+|---|---|---|
+| OpenCode | `OPENCODE_CONFIG_CONTENT`: a custom `@ai-sdk/openai-compatible` provider, `baseURL` `http://mock-openai:8080/v1` | `OPENCODE_DISABLE_MODELS_FETCH=true` keeps it off models.dev. Verified |
+| Claude Code | `ANTHROPIC_BASE_URL=http://mock-anthropic:8080`, `ANTHROPIC_API_KEY` (dummy), `ANTHROPIC_MODEL=sonnet` | Verified in print mode (`claude -p`). The interactive TUI asks once to approve a custom API key (unverified) |
+| Codex | A `[model_providers.*]` entry with `wire_api = "responses"` in its `config.toml`; `dev/try-codex.sh` writes one | `OPENAI_BASE_URL` is ignored, and `wire_api = "chat"` is rejected (verified, 0.158.0) |
+
+To use Codex by hand, in the container: put the block below in `$CODEX_HOME/config.toml` (with a `CODEX_HOME` outside `~`, or in a scratch directory) and run `codex exec --dangerously-bypass-approvals-and-sandbox "..."`.
+
+```toml
+model = "mock-gpt"
+model_provider = "mock"
+[model_providers.mock]
+name = "Mock OpenAI"
+base_url = "http://mock-openai:8080/v1"
+env_key = "OPENAI_API_KEY"
+wire_api = "responses"
+```
+
+**Scenarios.** The mocks answer plain text by default. A prompt containing `[mock:tool-call]` gets a tool call that writes `hello.txt` (then the final text once the tool result comes back), which is what the `dev/try-*.sh` scripts use. `[mock:rate-limit]` and `[mock:server-error]` (or the header `X-Mock-Scenario: rate-limit|server-error`) return the provider's 429 and 500 error bodies. Streaming and non-streaming requests are both served. Details, precedence and what was verified against the real CLIs: [`dev/wiremock/README.md`](dev/wiremock/README.md).
+
+`.github/workflows/compose.yml` runs `docker compose config`, starts the mocks, curls them and runs the three `try-*.sh` scripts in the pinned workspace image, whenever `compose.yaml` or `dev/` change. To try newer tools, bump the pinned `workspace` / `agent-canvas` tag and digest in `compose.yaml` (both tags are immutable).

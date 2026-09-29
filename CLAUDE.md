@@ -90,6 +90,35 @@ curl -s -o /dev/null -w '%{http_code}\n' -H "Authorization: Bearer $TOKEN" \
   https://ghcr.io/v2/vymalo/another-agentic-images/agent-canvas/manifests/<tag>
 ```
 
+## Local testing
+
+`compose.yaml` (repo root) runs the images beside WireMock mocks of the model
+providers, so the baked CLIs work offline: `mock-openai` (`/v1/chat/completions`
+for OpenCode, `/v1/responses` for Codex), `mock-anthropic` (`/v1/messages` for
+Claude Code), `workspace` (published image, pinned), `workspace-build` (profile
+`build`, from `workspace/Dockerfile`), `agent-canvas` (profile `agent-canvas`).
+Mappings live in `dev/wiremock/<mock>/`; scenario switches (`[mock:tool-call]`,
+`[mock:rate-limit]`, `[mock:server-error]`) are in `dev/wiremock/README.md`.
+`dev/probe-mocks.sh` curls every endpoint and scenario from the host.
+`dev/try-{opencode,claude,codex}.sh` run inside the container (mounted at
+`/dev-scripts`) and assert the agent created `hello.txt`; keep them POSIX sh and
+shellcheck-clean. README.md "Local testing" is the user-facing guide.
+
+- **The layout contract applies to compose too.** Never mount a volume or file
+  under the runtime user's `$HOME` unless the image pre-creates the directory
+  (a missing mount parent is root-owned). Volumes go on `/work` and on paths
+  the agent-canvas image declares (`~/.openhands`, `/projects`).
+- **Pins.** WireMock, `workspace` and `agent-canvas` are pinned by
+  tag and digest. After a release you want to try, bump them in
+  `compose.yaml` and check anonymous pull (see *Release flow*).
+- **Mocks must match real client behaviour.** Verify a mapping change with the
+  real CLIs at the versions in the Dockerfiles, not only with `curl` (Codex
+  rejects `wire_api = "chat"` and ignores `OPENAI_BASE_URL`; Claude Code
+  retries 429/5xx for minutes unless `CLAUDE_CODE_MAX_RETRIES` is set).
+- `.github/workflows/compose.yml` (paths: `compose.yaml`, `dev/**`) validates
+  the file for every profile, starts the mocks, runs `probe-mocks.sh` and the three
+  `try-*.sh` scripts in the pinned workspace image.
+
 ## Commands
 
 ```sh
@@ -97,6 +126,8 @@ docker buildx build --check --platform linux/amd64 -f agent-canvas/Dockerfile . 
 docker buildx build --check --platform linux/amd64 -f workspace/Dockerfile .      # lint
 sh -n toolchains/install.sh && sh tools/check-pins.sh                             # syntax; shared pins equal
 sh tools/image-size.sh --layers <registry/name:tag | oci.tar>                     # compressed size (bytes on stdout) + per-layer table (stderr)
+docker compose --profile '*' config -q && shellcheck dev/*.sh                     # compose.yaml valid for every profile; dev scripts clean
+docker compose up -d --wait mock-openai mock-anthropic                            # the mocks (README.md "Local testing")
 git config core.hooksPath .githooks                                               # once per clone
 ```
 
@@ -109,4 +140,4 @@ Conventional Commits, enforced by `tools/commit-lint.sh` (local hook and CI).
 - Branch + PR against `main`; `gh`/`git push` via `zsh -i -c '…'`.
 - Body follows `.github/PULL_REQUEST_TEMPLATE.md` (AI governance; the
   `AI Governance` check enforces it).
-- Checks: `AI Governance`, `Commit Lint`, and `Build agent-canvas` / `Build workspace` when an image or `toolchains/` changes.
+- Checks: `AI Governance`, `Commit Lint`, `Build agent-canvas` / `Build workspace` when an image or `toolchains/` changes, and `Compose` when `compose.yaml` or `dev/` changes.
