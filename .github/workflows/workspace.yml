@@ -116,9 +116,11 @@ jobs:
           file: workspace/Dockerfile
           platforms: linux/amd64
           push: ${{ github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/')) }}
-          # Pull requests: no push, but export an OCI tarball (gzip layers, so
-          # its size matches what a pull downloads) to report the size.
-          outputs: ${{ github.event_name == 'pull_request' && format('type=oci,dest={0}/workspace.tar', runner.temp) || '' }}
+          # Pull requests: no push, but export an OCI tarball to report the size.
+          # compression=gzip is BuildKit's default; it is spelled out because the
+          # measurement (tools/image-size.sh sums the layer blobs) is only
+          # comparable to a registry pull when the layers are gzip, as in a push.
+          outputs: ${{ github.event_name == 'pull_request' && format('type=oci,dest={0}/workspace.tar,compression=gzip', runner.temp) || '' }}
           provenance: false
           secrets: |
             github_token=${{ secrets.GITHUB_TOKEN }}
@@ -129,33 +131,54 @@ jobs:
       - name: Report image size
         run: |
           if [ "${{ github.event_name }}" = pull_request ]; then
-            ws="$(stat -c %s "${{ runner.temp }}/workspace.tar")"
+            src="${{ runner.temp }}/workspace.tar"
             what="built in this run (OCI tarball)"
           elif [ "${{ github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/') }}" = true ]; then
-            ws="$(sh tools/image-size.sh "${{ steps.meta.outputs.pinned }}")"
-            what="\`${{ steps.meta.outputs.pinned }}\`"
+            src="${{ steps.meta.outputs.pinned }}"
+            what="\`${src}\`"
           else
             echo "Nothing pushed or exported; no size to report."
             exit 0
           fi
           human() { numfmt --to=iec --suffix=B "$1"; }
+
+          # Sizes are the sum of the compressed layer blobs (what a pull
+          # downloads), in bytes, from tools/image-size.sh. --layers prints the
+          # per-layer breakdown to this log.
+          echo "::group::workspace layers: ${src}"
+          ws="$(sh tools/image-size.sh --layers "$src")"
+          echo "::endgroup::"
+          echo "workspace:    ${ws} bytes ($(human "$ws"))"
           {
             echo "### Image size (compressed)"
             echo
-            echo "| Image | Size |"
-            echo "|---|---|"
-            echo "| workspace, ${what} | $(human "$ws") |"
+            echo "| Image | Bytes | Size |"
+            echo "|---|---|---|"
+            echo "| workspace, ${what} | ${ws} | $(human "$ws") |"
           } >> "$GITHUB_STEP_SUMMARY"
-          if ac="$(sh tools/image-size.sh "${AGENT_CANVAS_IMAGE}" 2>/dev/null)"; then
+
+          echo "::group::agent-canvas layers: ${AGENT_CANVAS_IMAGE}"
+          if ac="$(sh tools/image-size.sh --layers "${AGENT_CANVAS_IMAGE}")"; then
+            echo "::endgroup::"
             delta=$((ac - ws))
+            echo "agent-canvas: ${ac} bytes ($(human "$ac"))"
+            if [ "$delta" -ge 0 ]; then
+              echo "workspace is smaller by ${delta} bytes ($(human "$delta")); the target is 1000000000"
+            else
+              echo "workspace is LARGER by $((-delta)) bytes ($(human "$((-delta))"))"
+            fi
             {
-              echo "| agent-canvas, \`${AGENT_CANVAS_IMAGE}\` | $(human "$ac") |"
-              echo "| **workspace is smaller by** | **$(human "$delta")** |"
+              echo "| agent-canvas, \`${AGENT_CANVAS_IMAGE}\` | ${ac} | $(human "$ac") |"
+              echo "| **workspace is smaller by** | **${delta}** | **$(human "$delta")** |"
             } >> "$GITHUB_STEP_SUMMARY"
+            # agent-canvas:latest moves when its own build publishes (the shared
+            # script dropped its duplicated chown layer), so this reference can
+            # shrink under an unchanged workspace.
             if [ "$delta" -lt 1000000000 ]; then
-              echo "::warning::workspace is less than 1 GB smaller than agent-canvas (acceptance criterion of issue #6)"
+              echo "::warning::workspace is less than 1 GB smaller than agent-canvas (${delta} bytes; acceptance criterion of issue #6)"
             fi
           else
+            echo "::endgroup::"
             echo "::warning::could not read the size of ${AGENT_CANVAS_IMAGE}"
           fi
 

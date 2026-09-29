@@ -96,6 +96,7 @@ curl -s -o /dev/null -w '%{http_code}\n' -H "Authorization: Bearer $TOKEN" \
 docker buildx build --check --platform linux/amd64 -f agent-canvas/Dockerfile .   # lint (repo root is the context)
 docker buildx build --check --platform linux/amd64 -f workspace/Dockerfile .      # lint
 sh -n toolchains/install.sh && sh tools/check-pins.sh                             # syntax; shared pins equal
+sh tools/image-size.sh --layers <registry/name:tag | oci.tar>                     # compressed size (bytes on stdout) + per-layer table (stderr)
 git config core.hooksPath .githooks                                               # once per clone
 ```
 

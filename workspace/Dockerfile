@@ -7,7 +7,7 @@
 #
 # Same recipe as agent-canvas: toolchains/install.sh, shared, so the two images
 # provide exactly the same tools. The pins below MUST equal agent-canvas's
-# (CI checks: toolchains/check-pins.sh). Build from the REPO ROOT:
+# (CI checks: tools/check-pins.sh). Build from the REPO ROOT:
 #   docker buildx build -f workspace/Dockerfile .
 #
 # Layout rule (CLAUDE.md): toolchains live under /opt (Node under /usr/local),
@@ -29,7 +29,7 @@ ARG DEBIAN_TAG=trixie-slim
 ARG DEBIAN_DIGEST=sha256:a99cfc517144bc59b1978475ec53b46ecabec7e43635402ee5b77cc54cd1b20a
 FROM debian:${DEBIAN_TAG}@${DEBIAN_DIGEST}
 
-# Shared pins: keep equal to agent-canvas/Dockerfile (see toolchains/check-pins.sh).
+# Shared pins: keep equal to agent-canvas/Dockerfile (see tools/check-pins.sh).
 ARG RUST_TOOLCHAIN=1.98.1
 ARG FLUTTER_VERSION=3.44.4
 ARG SCCACHE_VERSION=0.16.0

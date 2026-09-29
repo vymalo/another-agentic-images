@@ -121,8 +121,12 @@ jobs:
       - name: Summary
         if: github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/'))
         run: |
+          echo "::group::agent-canvas layers: ${{ steps.meta.outputs.pinned }}"
+          size="$(sh tools/image-size.sh --layers "${{ steps.meta.outputs.pinned }}")"
+          echo "::endgroup::"
+          echo "agent-canvas: ${size} bytes ($(numfmt --to=iec --suffix=B "$size"))"
           {
             echo "Published \`${{ steps.meta.outputs.pinned }}\`"
             echo
-            echo "Compressed size (sum of layers): $(sh tools/image-size.sh "${{ steps.meta.outputs.pinned }}" | numfmt --to=iec --suffix=B)"
+            echo "Compressed size (sum of layers): ${size} bytes ($(numfmt --to=iec --suffix=B "$size"))"
           } >> "$GITHUB_STEP_SUMMARY"
