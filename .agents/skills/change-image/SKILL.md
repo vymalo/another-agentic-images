@@ -7,6 +7,11 @@ description: Add a tool to, or bump a pinned version in, an another-agentic-imag
 
 ## Procedure
 
+0. **One recipe, two images.** The install steps live in `toolchains/install.sh`,
+   shared by `agent-canvas/Dockerfile` and `workspace/Dockerfile`. Add the tool
+   there, pass its version from **both** Dockerfiles' `ARG`s (`tools/check-pins.sh`
+   fails when they differ), and add it to **both** smoke tests. Don't put other
+   files in `toolchains/` (they invalidate the cached toolchain layer).
 1. **Pin it.** New tools get an `ARG NAME_VERSION=…` near the others, with a
    comment saying where the pin comes from (a consuming repo's pin, or the
    registry's latest on a date). Never `latest`.
@@ -21,9 +26,11 @@ description: Add a tool to, or bump a pinned version in, an another-agentic-imag
 5. **Self-updaters off;** keep npm postinstall scripts (native binaries).
 6. **Smoke test:** add the tool to the final `bash -lc` `RUN` (login shell,
    uid 10001). Note `set -e` does not fail on `! cmd` — use explicit `test`/`if`.
-7. **Lint:** `docker buildx build --check --platform linux/amd64 -f agent-canvas/Dockerfile agent-canvas`.
+7. **Lint** (repo root is the build context for both images):
+   `docker buildx build --check --platform linux/amd64 -f agent-canvas/Dockerfile .`
+   and the same with `-f workspace/Dockerfile`; `sh -n toolchains/install.sh`.
 8. **PR:** follow the template; **wait for the PR's own `Build agent-canvas`
-   run to be green before merging**.
+   and `Build workspace` runs to be green before merging**.
 9. **After merge:** the `main` run publishes `1.24.0-<sha7>`. If the package
    path is new, check anonymous pull (CLAUDE.md → *Release flow*).
 10. **Roll out:** PR to `WhyThatFunction/home-os` bumping

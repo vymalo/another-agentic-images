@@ -1,0 +1,4 @@
+# Both Dockerfiles build from the repo root; the only context they need is the
+# shared install script (bind-mounted by the Dockerfiles). Everything else stays out.
+*
+!toolchains/
