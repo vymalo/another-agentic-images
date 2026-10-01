@@ -19,6 +19,9 @@
 # its binary on top. Not included: Python, the ACP adapters (claude-agent-acp,
 # codex-acp — upstream Agent Canvas bundles those, the coder does not need them).
 #
+# Also a dev container base image: the devcontainer.metadata label below, and
+# CI proves it with tools/check-devcontainer.sh.
+#
 # amd64 only (Flutter publishes no linux-arm64 SDK tarball).
 
 # debian:trixie-slim (glibc, same family as upstream agent-canvas), pinned by
@@ -50,6 +53,18 @@ ARG TOOLCHAIN_HOME=/home/agent
 LABEL org.opencontainers.image.source="https://github.com/vymalo/another-agentic-images" \
       org.opencontainers.image.description="Lean workspace: Rust, Flutter/Dart and Node toolchains plus the Claude Code, Codex and OpenCode CLIs on Debian" \
       org.opencontainers.image.licenses="MIT"
+
+# Dev container metadata (containers.dev "image metadata"): the label that
+# tools implementing the spec (the reference devcontainer CLI, among others)
+# read, so a repository whose devcontainer.json says only
+# {"image": ".../workspace:<tag>"} gets the right user. updateRemoteUserUID is
+# the spec's default, written out on purpose: on a Linux host the CLI moves
+# `agent` to the host user's uid when it bind-mounts a folder (and changes
+# nothing when the uids already match). workspaceFolder is NOT an
+# image-metadata property (the spec's table), so it cannot be set here; without
+# it the CLI mounts the folder at /workspaces/<name>.
+# Spec: https://containers.dev/implementors/spec/#image-metadata
+LABEL devcontainer.metadata='[{"remoteUser":"agent","containerUser":"agent","updateRemoteUserUID":true}]'
 
 USER root
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
@@ -94,6 +109,14 @@ RUN --mount=type=bind,source=toolchains,target=/toolchains \
 ENV DISABLE_AUTOUPDATER=1 \
     OPENCODE_DISABLE_AUTOUPDATE=1
 
+# Layout contract, rule 2: a container runtime creates the missing parents of a
+# mount target as root. /workspaces is where the devcontainer CLI mounts a
+# folder (/workspaces/<name>); /work/workspaces is the parent of the coder's
+# per-run slots (<WORKSPACE_ROOT>/workspaces/<run>), which a dev container binds
+# at the same path. Created in a layer of its own, after the toolchains, so the
+# cached toolchain layer is reused.
+RUN install -d -o 10001 -g 10001 /work/workspaces /workspaces
+
 USER agent
 WORKDIR /work
 
@@ -110,6 +133,7 @@ RUN bash -lc 'set -e; \
       test -O /home/agent/.local/share; \
       git --version; ssh -V; tini --version; cc --version; \
       test -w /work; \
+      test -O /work/workspaces; test -O /workspaces; \
       test "$(id -u)" = 10001'
 
 # PID 1 reaping and signal forwarding; no agent process. The coder image adds

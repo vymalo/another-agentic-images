@@ -5,7 +5,7 @@ Container images for the another-agentic family (another-agentic-platform, anoth
 | Image | What | Base |
 |---|---|---|
 | [`agent-canvas`](#agent-canvas) | OpenHands Agent Canvas plus the toolchains | upstream `ghcr.io/openhands/agent-canvas` |
-| [`workspace`](#workspace) | The same toolchains, no Agent Canvas: the runtime for coder agents | `debian:trixie-slim` |
+| [`workspace`](#workspace) | The same toolchains, no Agent Canvas: the runtime for coder agents, and a [dev container](#use-it-as-a-dev-container) base | `debian:trixie-slim` |
 
 Both run the same install script, [`toolchains/install.sh`](toolchains/install.sh), so they provide identical tools. Build from the repo root: `docker buildx build -f <image>/Dockerfile .`
 
@@ -48,7 +48,7 @@ Consumed by `WhyThatFunction/home-os` (`charts/apps/values.yaml`, Application `a
 | Node | Node `24.21.0` from nodejs.org (pinned by version and sha256, in `/usr/local`) + corepack shims; pnpm store in `~/.cache/pnpm-store` |
 | Base | git, openssh-client, ca-certificates, gcc/g++/make, libssl-dev, tini |
 
-- User `agent` (uid/gid 10001), home `/home/agent`; `/work` is owned by it, for mirrors and worktrees.
+- User `agent` (uid/gid 10001), home `/home/agent`; `/work` is owned by it, for mirrors and worktrees. `/work/workspaces` and `/workspaces` exist too, also owned by it: they are the parents of mount targets (see [Use it as a dev container](#use-it-as-a-dev-container)), and a container runtime would otherwise create them as root.
 - `ENTRYPOINT ["tini", "--"]` and no default process: the coder image adds its binary.
 - Not included: the ACP adapters (`claude-agent-acp`, `codex-acp`), which `agent-canvas` gets from upstream, and Python.
 - Same layout contract as `agent-canvas`, with `/home/agent` in place of `/home/openhands`.
@@ -58,6 +58,34 @@ Consumed by `WhyThatFunction/home-os` (`charts/apps/values.yaml`, Application `a
 - `latest`: moving. There is no moving `<rust toolchain>` tag, because a Flutter or CLI bump would move it silently.
 
 **Bumping:** edit the `ARG`s at the top of [`workspace/Dockerfile`](workspace/Dockerfile), and the same pins in `agent-canvas/Dockerfile`. New tools go in `toolchains/install.sh` and in both smoke tests. Merging to `main` publishes.
+
+### Use it as a dev container
+
+The image carries a [`devcontainer.metadata` label](https://containers.dev/implementors/spec/#image-metadata) (`remoteUser` and `containerUser` `agent`, `updateRemoteUserUID` `true`), so a repository only has to name it. In `.devcontainer/devcontainer.json`:
+
+```jsonc
+{
+  "name": "my-project",
+  // Pin the immutable <rust toolchain>-<sha7> tag, not latest.
+  "image": "ghcr.io/vymalo/another-agentic-images/workspace:1.98.1-<sha7>"
+}
+```
+
+A tool that implements the [containers.dev](https://containers.dev) spec (the reference [`devcontainer` CLI](https://github.com/devcontainers/cli), for one) then starts the container, runs everything as `agent` in a login shell with the toolchains on `PATH`, and mounts the project folder at `/workspaces/<folder name>`. Try it from a checkout of a project that has that file:
+
+```sh
+npx --yes @devcontainers/cli@0.89.0 up --workspace-folder .
+npx --yes @devcontainers/cli@0.89.0 exec --workspace-folder . bash -lc 'whoami; rustc --version'
+```
+
+- **Tags.** Only images published from the change that added the label carry it; `1.98.1-bc97d51` and older do not. Check an image with `docker inspect --format '{{ index .Config.Labels "devcontainer.metadata" }}' <image>`.
+- **`workspaceFolder` is not set by the image.** The spec does not allow it in image metadata (only the properties marked in its [reference](https://containers.dev/implementors/json_reference/) can be), so a repository that wants another folder sets `workspaceFolder` and `workspaceMount` in its own `devcontainer.json`.
+- **The entrypoint.** `tini` is the image's `ENTRYPOINT`, but for an image config the spec's `overrideCommand` defaults to `true`: the tool replaces the entrypoint with a sleep loop. Add `"init": true` if the container needs an init process.
+- **User ids.** `updateRemoteUserUID` is the spec's default. On a Linux host whose user is not uid 10001, the tool gives `agent` the host user's uid and gid, so files made in the bind-mounted folder belong to you; it changes the ownership of `/home/agent` only. `/work`, `/workspaces` and the toolchains in `/opt` (`/opt/rustup`, `/opt/cargo`, `/opt/flutter`) keep their owner, uid 10001, so `agent` can no longer write to them (`rustup toolchain install`, Flutter's first-run cache). Set `"updateRemoteUserUID": false` in the repository's `devcontainer.json` to keep uid 10001; the mounted folder must then be writable by uid 10001.
+- **Size.** The image is large (the toolchains of [`workspace`](#workspace)), and amd64 only. A repository that needs one tool can use a smaller image of its own.
+- **Who uses it.** Planned: the default dev container of the adam-rs coder (`vymalo/another-adam-rs`) for a repository that has no `devcontainer.json`. `/work/workspaces` is the parent of the coder's per-run workspace folders, which a dev container binds at the same path.
+
+`tools/check-devcontainer.sh <image>` proves the above against a built image: the CLI merges the label, `up` succeeds, and in a login shell `whoami` is `agent`, `rustc`, `cargo`, `node`, `git` and `opencode` run, `/work/workspaces` and `/workspaces` belong to uid 10001, and a file made in the mounted folder belongs to the host user. `workspace.yml` runs it after every build (needs `docker`, `node`, `jq`; with the setup-buildx builder, `BUILDX_BUILDER=default`, see the script).
 
 ## Local testing
 

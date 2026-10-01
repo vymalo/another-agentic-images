@@ -11,13 +11,18 @@ on 2026-09-28.
 | Image | Source | Consumed by |
 |---|---|---|
 | `ghcr.io/vymalo/another-agentic-images/agent-canvas` | `agent-canvas/Dockerfile` | `WhyThatFunction/home-os`, `charts/apps/values.yaml`, Application `agent-canvas` (netcup) |
-| `ghcr.io/vymalo/another-agentic-images/workspace` | `workspace/Dockerfile` | the adam-rs coder agent (`vymalo/another-adam-rs`) |
+| `ghcr.io/vymalo/another-agentic-images/workspace` | `workspace/Dockerfile` | the adam-rs coder agent (`vymalo/another-adam-rs`): its base image, and (planned, its slice 7b) the default dev container for a repository without a `devcontainer.json` |
 
 `agent-canvas` is upstream `ghcr.io/openhands/agent-canvas` (pinned by tag
 **and** digest) plus Rust, Flutter/Dart, corepack, sccache, and the Claude Code,
 Codex and OpenCode CLIs. `workspace` is the same toolchains on a bare
 `debian:trixie-slim` (pinned by tag **and** digest) with Node 24, git, ssh and
-tini, no Agent Canvas, user `agent` (10001), `/work`, and no agent process.
+tini, no Agent Canvas, user `agent` (10001), `/work`, and no agent process. It is
+also a **dev container base** (containers.dev): a `devcontainer.metadata` label
+(`remoteUser`/`containerUser` `agent`, `updateRemoteUserUID`), and the mount-point
+parents `/work/workspaces` and `/workspaces` owned by 10001. `workspaceFolder` is
+not an image-metadata property, so the image cannot set it. `tools/check-devcontainer.sh`
+(run by `workspace.yml` after the build) proves the devcontainer CLI can use the image.
 
 **Both run one script, `toolchains/install.sh`** (bind-mounted by each
 Dockerfile, run once as root). The recipe lives there; each Dockerfile keeps its
@@ -32,7 +37,7 @@ goes in the script, and in **both** Dockerfiles' pins and smoke tests.
    persistent volumes over parts of `/home/openhands`, and a mount hides what
    the image put there.
 2. **Pre-create the parents of nested mount points as the runtime user**
-   (`openhands`; `agent` in workspace). A container
+   (`openhands`; `agent` in workspace, which also has `/work/workspaces` and `/workspaces`). A container
    runtime creates missing parents of a mount target as root (e.g. mounting
    `~/.local/share/opencode` would leave `~/.local/share` root-owned).
 3. **`PATH` and tool env go in `/etc/profile.d/10-toolchains.sh` as well as
@@ -76,6 +81,10 @@ is no moving `<RUST_TOOLCHAIN>` tag, because a Flutter or CLI bump would move it
 silently. PRs export an OCI tarball to report the image size; `main` reports the
 pushed size. Both image builds use the **repo root** as context.
 
+- `workspace.yml` also runs the dev container check after the build (a PR loads the
+  image with a cached `load: true` rebuild; `main` pulls the pushed tag). It needs
+  `BUILDX_BUILDER=default`: the CLI builds a small image `FROM` the local one, which
+  the setup-buildx container builder cannot see.
 - **Don't merge before the PR's own build is green** (both builds, when
   `toolchains/` changes) — the smoke test is the only proof the tools work as
   the runtime user.
@@ -125,6 +134,8 @@ shellcheck-clean. README.md "Local testing" is the user-facing guide.
 docker buildx build --check --platform linux/amd64 -f agent-canvas/Dockerfile .   # lint (repo root is the context)
 docker buildx build --check --platform linux/amd64 -f workspace/Dockerfile .      # lint
 sh -n toolchains/install.sh && sh tools/check-pins.sh                             # syntax; shared pins equal
+sh tools/check-devcontainer.sh <image>                                            # the devcontainer CLI can use a built workspace image (docker, node, jq)
+shellcheck tools/check-devcontainer.sh                                            # clean
 sh tools/image-size.sh --layers <registry/name:tag | oci.tar>                     # compressed size (bytes on stdout) + per-layer table (stderr)
 docker compose --profile '*' config -q && shellcheck dev/*.sh                     # compose.yaml valid for every profile; dev scripts clean
 docker compose up -d --wait mock-openai mock-anthropic                            # the mocks (README.md "Local testing")

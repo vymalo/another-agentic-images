@@ -11,10 +11,16 @@ name: Build workspace image
 # Safety:
 #   - Pull requests BUILD (including the Dockerfile's login-shell smoke test,
 #     which is a RUN) but never PUSH. They export the image to a tarball only to
-#     measure its size.
+#     measure its size, and load it into the Docker daemon for the dev
+#     container check below.
 #   - Publishes only from `main` and `v*` tags.
 #   - GITHUB_TOKEN reaches the build only as a BuildKit secret (cargo-binstall
 #     rate limit); it is never baked into a layer.
+#
+# Dev container check (tools/check-devcontainer.sh): the image must work as a
+# dev container base. The devcontainer CLI reads its devcontainer.metadata
+# label, starts it and runs commands in it as `agent`; the coder's default
+# environment relies on this. The CLI is pinned in that script.
 #
 # Tags: `<rust toolchain>-<sha7>` (immutable — pin THIS in deployments) and
 # moving `latest`. The toolchain version is the RUST_TOOLCHAIN ARG (e.g.
@@ -32,6 +38,7 @@ on:
       - toolchains/**
       - .dockerignore
       - tools/check-pins.sh
+      - tools/check-devcontainer.sh
       - tools/image-size.sh
       - .github/workflows/workspace.yml
   pull_request:
@@ -40,6 +47,7 @@ on:
       - toolchains/**
       - .dockerignore
       - tools/check-pins.sh
+      - tools/check-devcontainer.sh
       - tools/image-size.sh
       - .github/workflows/workspace.yml
   workflow_dispatch:
@@ -181,6 +189,49 @@ jobs:
             echo "::endgroup::"
             echo "::warning::could not read the size of ${AGENT_CANVAS_IMAGE}"
           fi
+
+      # The dev container check runs the image, so it must be in the Docker
+      # daemon. Pull requests exported an OCI tarball above and pushed nothing.
+      # Whether the runner's engine can `docker load` an OCI archive is not
+      # something to rely on, so build again with `load: true`: every layer is a
+      # cache hit in this builder (and in the registry cache). The tarball is
+      # dropped first, to give its disk back.
+      - name: Drop the OCI tarball
+        if: github.event_name == 'pull_request'
+        run: |
+          rm -f "${{ runner.temp }}/workspace.tar"
+          df -h /
+
+      - name: Load the image into the Docker daemon
+        if: github.event_name == 'pull_request'
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: workspace/Dockerfile
+          platforms: linux/amd64
+          load: true
+          provenance: false
+          secrets: |
+            github_token=${{ secrets.GITHUB_TOKEN }}
+          tags: ${{ steps.meta.outputs.pinned }}
+          cache-from: type=registry,ref=${{ steps.meta.outputs.cache }}
+
+      - name: Works as a dev container
+        if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/')
+        env:
+          # The CLI builds a small image FROM this one (the uid sync), with
+          # `docker build`. The docker-container builder that setup-buildx
+          # selected cannot see an image that is only in the local daemon (it
+          # would try the registry, where a pull request's image is not), so use
+          # the daemon's own builder.
+          BUILDX_BUILDER: default
+        run: |
+          image="${{ steps.meta.outputs.pinned }}"
+          # main and tags pushed the image above; pull requests loaded it.
+          if [ "${{ github.event_name }}" != pull_request ]; then
+            docker pull "$image"
+          fi
+          sh tools/check-devcontainer.sh "$image"
 
       - name: Summary
         if: github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/'))
