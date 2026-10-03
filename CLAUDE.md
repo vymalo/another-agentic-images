@@ -60,6 +60,19 @@ goes in the script, and in **both** Dockerfiles' pins and smoke tests.
 
 Skill: `change-image` (`.agents/skills/change-image/SKILL.md`).
 
+## Skills
+
+Skills live in `.agents/skills/` (symlinked into `.claude/skills/`). The repo's
+own skill is `change-image`; start there for any image change. The others are
+vendored from `vymalo/another-adam-rs`, which provides them, and pinned in
+`skills-lock.json`: update them with `npx skills update`, never by hand-editing
+their files. `change-image` is first-party and not in the lockfile.
+
+| When you are… | Use |
+|---|---|
+| Changing an image, a toolchain pin or an image workflow | **`change-image`** (repo skill) |
+| Working on the coder image built on `workspace`, or bumping adam-rs (pin by tag and digest) | `adam-coder-deploy`, `adam-upgrade` |
+
 ## Release flow
 
 ```mermaid
