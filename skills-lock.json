@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "skills": {
+    "adam-coder-deploy": {
+      "source": "vymalo/another-adam-rs",
+      "sourceType": "github",
+      "skillPath": ".agents/skills/adam-coder-deploy/SKILL.md",
+      "computedHash": "d070f3b2328b6fb5dfadf3953915c94ce42447ec2e811f41eb1ec4c5a6f00f94"
+    },
+    "adam-upgrade": {
+      "source": "vymalo/another-adam-rs",
+      "sourceType": "github",
+      "skillPath": ".agents/skills/adam-upgrade/SKILL.md",
+      "computedHash": "647cc73d4082217aed6b5da53fc485cdfa3abbf39d654b6aa36386217cf020fb"
+    }
+  }
+}
