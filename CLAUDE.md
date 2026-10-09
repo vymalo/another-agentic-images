@@ -14,8 +14,9 @@ on 2026-09-28.
 | `ghcr.io/vymalo/another-agentic-images/workspace` | `workspace/Dockerfile` | the adam-rs coder agent (`vymalo/another-adam-rs`): its base image, and (planned, its slice 7b) the default dev container for a repository without a `devcontainer.json` |
 
 `agent-canvas` is upstream `ghcr.io/openhands/agent-canvas` (pinned by tag
-**and** digest) plus Rust, Flutter/Dart, corepack, sccache, and the Claude Code,
-Codex and OpenCode CLIs. `workspace` is the same toolchains on a bare
+**and** digest) plus Rust, Flutter/Dart, corepack, sccache, the Claude Code,
+Codex and OpenCode CLIs, and the obscura headless browser (screenshots without
+Chromium). `workspace` is the same toolchains on a bare
 `debian:trixie-slim` (pinned by tag **and** digest) with Node 24, git, ssh and
 tini, no Agent Canvas, user `agent` (10001), `/work`, and no agent process. It is
 also a **dev container base** (containers.dev): a `devcontainer.metadata` label

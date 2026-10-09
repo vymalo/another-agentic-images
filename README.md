@@ -21,9 +21,16 @@ Both run the same install script, [`toolchains/install.sh`](toolchains/install.s
 | Flutter/Dart | Flutter SDK `3.44.4` (bundles Dart), web artifacts precached |
 | Node | upstream Node 24 + corepack shims (pnpm/yarn resolve each project's `packageManager`); pnpm store in `~/.cache/pnpm-store` |
 | Coding agents | Claude Code `2.1.283`, Codex `0.158.0` and OpenCode `1.18.33` CLIs (sign in, terminal use; `opencode serve`/`web`/`acp`). The ACP adapters Agent Canvas drives Claude Code and Codex through (`claude-agent-acp`, `codex-acp`, plus `gemini`) come from upstream's `/acp-node`. Self-updaters are disabled — bump via the `ARG`s |
+| Browser | [obscura](https://github.com/h4ckf0r0day/obscura) `0.2.4`: a headless browser with its own renderer, for screenshots without Playwright or Chromium: `obscura fetch http://127.0.0.1:3000 --allow-private-network --screenshot shot.png` ([below](#obscura)) |
 | Native deps | clang, lld, cmake, pkg-config, protobuf-compiler |
 
 **Why:** the upstream image has no Rust or Flutter, so its agent installs them at run time into `$HOME` on the container filesystem. Every restart then throws them away.
+
+<a id="obscura"></a>**obscura:** `obscura` and `obscura-worker` (which `obscura scrape` needs beside it) in `/opt/obscura/bin`, from the release asset `obscura-x86_64-linux.tar.gz`, pinned by `OBSCURA_VERSION` and `OBSCURA_SHA256`. *Verified 2026-10-09* against [h4ckf0r0day/obscura](https://github.com/h4ckf0r0day/obscura) v0.2.4 (Apache-2.0; its README, `docs/CLI-reference.md` and `.github/workflows/release.yml`) and by running the binary on `debian:trixie-slim`:
+- It refuses loopback and private addresses unless run with `--allow-private-network` (or `OBSCURA_ALLOW_PRIVATE_NETWORK=1`); the images set neither.
+- Its fonts are compiled in (Liberation Sans, Serif and Mono, DejaVu Sans, Noto Color Emoji), so text renders with no font packages in the image. `obscura serve --font-dir <dir>` loads more.
+- It links only glibc (2.35 or later), libm and libgcc_s. The renderer is its own, not Chromium's: upstream says long-tail CSS and font rasterization may differ.
+- The release publishes no checksum file, so `OBSCURA_SHA256` is the digest of the downloaded asset.
 
 **Layout contract:**
 - Toolchains live under `/opt` (`RUSTUP_HOME=/opt/rustup`, launchers in `/opt/cargo/bin`, `/opt/flutter`), never under `$HOME`, so a deployment can mount persistent volumes over home directories without hiding them.
@@ -44,7 +51,7 @@ Consumed by `WhyThatFunction/home-os` (`charts/apps/values.yaml`, Application `a
 
 | Ecosystem | Baked in |
 |---|---|
-| Rust, Flutter/Dart, coding agents, native deps | Exactly the `agent-canvas` set above (the Rust, Flutter and CLI pins must match, and CI checks it) |
+| Rust, Flutter/Dart, coding agents, browser, native deps | Exactly the `agent-canvas` set above (the Rust, Flutter, CLI and obscura pins must match, and CI checks it) |
 | Node | Node `24.21.0` from nodejs.org (pinned by version and sha256, in `/usr/local`) + corepack shims; pnpm store in `~/.cache/pnpm-store` |
 | Base | git, openssh-client, ca-certificates, gcc/g++/make, libssl-dev, tini |
 

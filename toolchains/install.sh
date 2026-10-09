@@ -1,10 +1,11 @@
 #!/bin/sh
 # Shared toolchain recipe for every image in this repo.
 #
-# Installs Rust, Flutter/Dart, Node tooling and the coding-agent CLIs, and
-# writes /etc/profile.d/10-toolchains.sh. Each Dockerfile passes the pins and
-# the runtime user as build ARGs (a RUN step sees ARGs as environment
-# variables), then runs this script ONCE, as root, in a single RUN:
+# Installs Rust, Flutter/Dart, Node tooling, the coding-agent CLIs and the
+# obscura headless browser, and writes /etc/profile.d/10-toolchains.sh. Each
+# Dockerfile passes the pins and the runtime user as build ARGs (a RUN step sees
+# ARGs as environment variables), then runs this script ONCE, as root, in a
+# single RUN:
 #
 #   RUN --mount=type=bind,source=toolchains,target=/toolchains \
 #       --mount=type=secret,id=github_token \
@@ -28,6 +29,8 @@
 #   CLAUDE_CODE_VERSION     @anthropic-ai/claude-code
 #   CODEX_VERSION           @openai/codex
 #   OPENCODE_VERSION        opencode-ai
+#   OBSCURA_VERSION         obscura headless browser, without the leading v
+#   OBSCURA_SHA256          sha256 of its obscura-x86_64-linux.tar.gz release asset
 #   TOOLCHAIN_USER          runtime user; must already exist
 #
 # Optional environment:
@@ -52,7 +55,8 @@ set -eu
 
 : "${RUST_TOOLCHAIN:?}" "${FLUTTER_VERSION:?}" "${SCCACHE_VERSION:?}" \
   "${CARGO_BINSTALL_VERSION:?}" "${CLAUDE_CODE_VERSION:?}" "${CODEX_VERSION:?}" \
-  "${OPENCODE_VERSION:?}" "${TOOLCHAIN_USER:?}"
+  "${OPENCODE_VERSION:?}" "${OBSCURA_VERSION:?}" "${OBSCURA_SHA256:?}" \
+  "${TOOLCHAIN_USER:?}"
 TOOLCHAIN_HOME="${TOOLCHAIN_HOME:-/home/${TOOLCHAIN_USER}}"
 TOOLCHAIN_UID="${TOOLCHAIN_UID:-10001}"
 TOOLCHAIN_GID="${TOOLCHAIN_GID:-10001}"
@@ -142,6 +146,24 @@ tar -xzf "${work}/sccache.tar.gz" -C "$work"
 install -m 0755 "${work}/${sccache_base}/sccache" /usr/local/bin/sccache
 rm -rf "${work:?}/${sccache_base:?}" "${work}/sccache.tar.gz"
 
+# ---- obscura (headless browser with its own renderer, no Chromium) -------
+# For screenshots of a site the agent serves on 127.0.0.1:
+#   obscura fetch http://127.0.0.1:3000 --allow-private-network --screenshot shot.png
+# The release asset carries `obscura` and `obscura-worker` (which `obscura
+# scrape` looks for next to `obscura`), so both go in one directory. They need
+# only glibc 2.35+ and libgcc_s, and bundle their fonts (Liberation, DejaVu,
+# Noto Color Emoji): no fontconfig or font packages. Upstream publishes no
+# checksum file; OBSCURA_SHA256 is the asset's own digest.
+obscura_tar="obscura-x86_64-linux.tar.gz"
+fetch "https://github.com/h4ckf0r0day/obscura/releases/download/v${OBSCURA_VERSION}/${obscura_tar}" \
+  "${work}/${obscura_tar}"
+(cd "$work" && printf '%s  %s\n' "$OBSCURA_SHA256" "$obscura_tar" | sha256sum -c -)
+install -d /opt/obscura/bin
+tar -xzf "${work}/${obscura_tar}" -C /opt/obscura/bin --no-same-owner obscura obscura-worker
+rm -f "${work}/${obscura_tar}"
+[ "$(/opt/obscura/bin/obscura --version)" = "obscura ${OBSCURA_VERSION}" ] \
+  || { echo "obscura version mismatch" >&2; exit 1; }
+
 # ---- Flutter SDK (bundles Dart) ----------------------------------------
 fetch "https://storage.googleapis.com/flutter_infra_release/releases/stable/linux/flutter_linux_${FLUTTER_VERSION}-stable.tar.xz" \
   "${work}/flutter.tar.xz"
@@ -176,7 +198,7 @@ export FLUTTER_HOME=/opt/flutter
 export COREPACK_ENABLE_DOWNLOAD_PROMPT=0
 export DISABLE_AUTOUPDATER=1
 export OPENCODE_DISABLE_AUTOUPDATE=1
-case ":$PATH:" in *:/opt/cargo/bin:*) ;; *) PATH="$HOME/.cargo/bin:/opt/cargo/bin:/opt/flutter/bin:/opt/flutter/bin/cache/dart-sdk/bin:$PATH" ;; esac
+case ":$PATH:" in *:/opt/cargo/bin:*) ;; *) PATH="$HOME/.cargo/bin:/opt/cargo/bin:/opt/flutter/bin:/opt/flutter/bin/cache/dart-sdk/bin:/opt/obscura/bin:$PATH" ;; esac
 export PATH
 EOF
 
