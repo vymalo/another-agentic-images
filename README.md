@@ -52,19 +52,48 @@ Consumed by `WhyThatFunction/home-os` (`charts/apps/values.yaml`, Application `a
 | Ecosystem | Baked in |
 |---|---|
 | Rust, Flutter/Dart, coding agents, browser, native deps | Exactly the `agent-canvas` set above (the Rust, Flutter, CLI and obscura pins must match, and CI checks it) |
-| Node | Node `24.21.0` from nodejs.org (pinned by version and sha256, in `/usr/local`) + corepack shims; pnpm store in `~/.cache/pnpm-store` |
+| Node | Node `24.21.0` from nodejs.org (pinned by version and sha256, in `/usr/local`) + corepack shims; npm cache and pnpm store in `/cache` ([below](#package-caches)) |
 | Base | git, openssh-client, ca-certificates, gcc/g++/make, libssl-dev, tini |
 
 - User `agent` (uid/gid 10001), home `/home/agent`; `/work` is owned by it, for mirrors and worktrees. `/work/workspaces` and `/workspaces` exist too, also owned by it: they are the parents of mount targets (see [Use it as a dev container](#use-it-as-a-dev-container)), and a container runtime would otherwise create them as root.
 - `ENTRYPOINT ["tini", "--"]` and no default process: the coder image adds its binary.
 - Not included: the ACP adapters (`claude-agent-acp`, `codex-acp`), which `agent-canvas` gets from upstream, and Python.
-- Same layout contract as `agent-canvas`, with `/home/agent` in place of `/home/openhands`.
+- Same layout contract as `agent-canvas`, with `/home/agent` in place of `/home/openhands`, except that the package caches live in `/cache` ([below](#package-caches)).
 
 **Tags:**
 - `<rust toolchain>-<sha7>`, e.g. `1.98.1-<sha7>`: immutable. Pin this in deployments.
 - `latest`: moving. There is no moving `<rust toolchain>` tag, because a Flutter or CLI bump would move it silently.
 
 **Bumping:** edit the `ARG`s at the top of [`workspace/Dockerfile`](workspace/Dockerfile), and the same pins in `agent-canvas/Dockerfile`. New tools go in `toolchains/install.sh` and in both smoke tests. Merging to `main` publishes.
+
+### Package caches
+
+The caches of cargo, npm and pnpm live in `/cache`, not in the home, which is lost when a run's environment is released. A deployment mounts one volume there (in Kubernetes a ReadWriteMany one) and the downloads survive. With nothing mounted `/cache` is a plain directory owned by `agent` and everything works as before, without sharing. `agent-canvas` is unchanged: its caches stay under its home.
+
+| Tool | Setting | Value | Where it is set |
+|---|---|---|---|
+| cargo | `CARGO_HOME` | `/cache/cargo`: registry, git checkouts, the package-cache lock | `ENV` and `/etc/profile.d/10-toolchains.sh` |
+| `cargo install`, cargo-binstall | `CARGO_INSTALL_ROOT` | `/home/agent/.cargo`: private, first on `PATH` as before | same |
+| npm | `cache` | `/cache/npm` | the global npmrc of Node's prefix, `/usr/local/etc/npmrc` |
+| pnpm | `store-dir`, `storeDir` | `/cache/pnpm-store` | `~/.config/pnpm/rc` (pnpm 10) and `config.yaml` (pnpm 12) |
+
+```yaml
+# Pod spec, trimmed: one shared claim, writable by uid/gid 10001.
+securityContext: { fsGroup: 10001 }          # or chown the volume once, where the driver ignores fsGroup
+containers:
+  - name: agent
+    image: ghcr.io/vymalo/another-agentic-images/workspace:<tag>
+    volumeMounts: [{ name: cache, mountPath: /cache }]
+volumes:
+  - name: cache
+    persistentVolumeClaim: { claimName: agent-cache }   # ReadWriteMany
+```
+
+- **Only `/cache` exists in the image.** A mounted volume hides what the image put there, so each tool creates its own subdirectory on first use. The volume's root must be writable by uid 10001, and a Kubernetes volume brings its own owner, which the image cannot set.
+- **One trust domain.** Every run that mounts the volume trusts everything on it: a run can write `/cache/cargo/config.toml`, and rustup puts `$CARGO_HOME/bin` first on the `PATH` of everything cargo starts. pnpm's [docs](https://pnpm.io/settings/store) say the same of its store. Do not share the volume between tenants, and do not `cargo login` there (the token goes to `$CARGO_HOME/credentials.toml`, *verified 2026-10-11*, [cargo-login](https://doc.rust-lang.org/cargo/commands/cargo-login.html)). Only `cargo install` binaries stay private, in `~/.cargo/bin`.
+- **Different filesystem, different behaviour.** pnpm copies packages instead of hard-linking them when `/cache` is on another filesystem than the project (`/work`). Cargo skips file locking on an NFS mount, so concurrent cargo processes there are not serialised by the package-cache lock (*verified 2026-10-11*, pnpm docs and cargo's `src/cargo/util/flock.rs`).
+- **Not moved:** Dart's `PUB_CACHE` (`~/.pub-cache`: `dart pub global activate` puts executables in its `bin/`, and pub's concurrency handling for git sources is not documented), corepack's cache, pnpm's metadata cache (`~/.cache/pnpm`) and sccache (an S3 backend is planned).
+- **The pnpm settings are in the home.** A volume mounted over `~/.config/pnpm` hides them and pnpm falls back to its default store.
 
 ### Use it as a dev container
 
@@ -88,7 +117,7 @@ npx --yes @devcontainers/cli@0.89.0 exec --workspace-folder . bash -lc 'whoami; 
 - **Tags.** Only images published from the change that added the label carry it; `1.98.1-bc97d51` and older do not. Check an image with `docker inspect --format '{{ index .Config.Labels "devcontainer.metadata" }}' <image>`.
 - **`workspaceFolder` is not set by the image.** The spec does not allow it in image metadata (only the properties marked in its [reference](https://containers.dev/implementors/json_reference/) can be), so a repository that wants another folder sets `workspaceFolder` and `workspaceMount` in its own `devcontainer.json`.
 - **The entrypoint.** `tini` is the image's `ENTRYPOINT`, but for an image config the spec's `overrideCommand` defaults to `true`: the tool replaces the entrypoint with a sleep loop. Add `"init": true` if the container needs an init process.
-- **User ids.** `updateRemoteUserUID` is the spec's default. On a Linux host whose user is not uid 10001, the tool gives `agent` the host user's uid and gid, so files made in the bind-mounted folder belong to you; it changes the ownership of `/home/agent` only. `/work`, `/workspaces` and the toolchains in `/opt` (`/opt/rustup`, `/opt/cargo`, `/opt/flutter`) keep their owner, uid 10001, so `agent` can no longer write to them (`rustup toolchain install`, Flutter's first-run cache). Set `"updateRemoteUserUID": false` in the repository's `devcontainer.json` to keep uid 10001; the mounted folder must then be writable by uid 10001.
+- **User ids.** `updateRemoteUserUID` is the spec's default. On a Linux host whose user is not uid 10001, the tool gives `agent` the host user's uid and gid, so files made in the bind-mounted folder belong to you; it changes the ownership of `/home/agent` only. `/work`, `/workspaces` and the toolchains in `/opt` (`/opt/rustup`, `/opt/cargo`, `/opt/flutter`) keep their owner, uid 10001, so `agent` can no longer write to them (`rustup toolchain install`, Flutter's first-run cache). `/cache` is world-writable with the sticky bit (mode 1777), so cargo, npm and pnpm still create their cache directories there; a volume mounted over it brings its own owner and mode. Set `"updateRemoteUserUID": false` in the repository's `devcontainer.json` to keep uid 10001; the mounted folder must then be writable by uid 10001.
 - **Size.** The image is large (the toolchains of [`workspace`](#workspace)), and amd64 only. A repository that needs one tool can use a smaller image of its own.
 - **Who uses it.** Planned: the default dev container of the adam-rs coder (`vymalo/another-adam-rs`) for a repository that has no `devcontainer.json`. `/work/workspaces` is the parent of the coder's per-run workspace folders, which a dev container binds at the same path.
 
