@@ -58,6 +58,9 @@ goes in the script, and in **both** Dockerfiles' pins and smoke tests.
    toolchains, and it runs in a single `RUN` (a later `chown -R` in its own layer
    would copy every file again). Keep its bind-mounted directory to that script:
    any file there invalidates the cached toolchain layer.
+9. **Package caches live under `/cache`, never under `$HOME`** (workspace, `TOOLCHAIN_CACHE`), and a deployment
+   mounts its shared cache volume there. The image creates only `/cache` (a mount hides the rest); what
+   `cargo install` writes stays private in `$HOME` (`CARGO_INSTALL_ROOT`).
 
 Skill: `change-image` (`.agents/skills/change-image/SKILL.md`).
 
