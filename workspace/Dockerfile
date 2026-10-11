@@ -179,7 +179,7 @@ RUN bash -lc 'set -e; \
       test "$(corepack pnpm@10.33.0 config get store-dir)" = /cache/pnpm-store; \
       test "$(pnpm config get store-dir)" = /cache/pnpm-store; \
       test "$(npm config get cache)" = /cache/npm; \
-      test -O /cache; test -w /cache; \
+      test -O /cache; test -w /cache; test -k /cache; \
       test "$CARGO_HOME" = /cache/cargo; test "$CARGO_INSTALL_ROOT" = /home/agent/.cargo; \
       env -i HOME=/home/agent /bin/bash -lc "test \"\$CARGO_HOME\" = /cache/cargo && test \"\$CARGO_INSTALL_ROOT\" = /home/agent/.cargo"; \
       s=$(mktemp -d); cargo new --quiet --vcs none --name cachesmoke "$s/p"; \

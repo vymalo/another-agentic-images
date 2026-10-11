@@ -233,8 +233,10 @@ EOF
 #   npm: `cache` in the global npmrc of Node's prefix (<prefix>/etc/npmrc),
 #     written by npm itself, which also creates etc/. Not an npm_config_* env var.
 #   pnpm: the store, below, in the same place as without a cache directory.
+# Mode 1777: a dev container that gives the runtime user the host's uid
+# (updateRemoteUserUID) must still create its cache directories here.
 if [ -n "$TOOLCHAIN_CACHE" ]; then
-  install -d -m 0755 -o "$TOOLCHAIN_UID" -g "$TOOLCHAIN_GID" "$TOOLCHAIN_CACHE"
+  install -d -m 1777 -o "$TOOLCHAIN_UID" -g "$TOOLCHAIN_GID" "$TOOLCHAIN_CACHE"
   npm config set cache "${TOOLCHAIN_CACHE}/npm" --location=global
   cat >> /etc/profile.d/10-toolchains.sh <<EOF
 export CARGO_HOME=${TOOLCHAIN_CACHE}/cargo
