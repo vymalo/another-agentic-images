@@ -1,10 +1,11 @@
 #!/bin/sh
 # Shared toolchain recipe for every image in this repo.
 #
-# Installs Rust, Flutter/Dart, Node tooling and the coding-agent CLIs, and
-# writes /etc/profile.d/10-toolchains.sh. Each Dockerfile passes the pins and
-# the runtime user as build ARGs (a RUN step sees ARGs as environment
-# variables), then runs this script ONCE, as root, in a single RUN:
+# Installs Rust, Flutter/Dart, Node tooling, the coding-agent CLIs and the
+# obscura headless browser, and writes /etc/profile.d/10-toolchains.sh. Each
+# Dockerfile passes the pins and the runtime user as build ARGs (a RUN step sees
+# ARGs as environment variables), then runs this script ONCE, as root, in a
+# single RUN:
 #
 #   RUN --mount=type=bind,source=toolchains,target=/toolchains \
 #       --mount=type=secret,id=github_token \
@@ -14,8 +15,9 @@
 # the same layer, so nothing is duplicated into a second layer.
 #
 # The layout contract lives in CLAUDE.md and holds for every image built here:
-# toolchains under /opt (never $HOME), CARGO_HOME left at ~/.cargo, PATH also in
-# /etc/profile.d, tools configured in their own config files, npm postinstalls
+# toolchains under /opt (never $HOME), package caches under TOOLCHAIN_CACHE when
+# set (else CARGO_HOME at ~/.cargo and the pnpm store under ~/.cache), PATH also
+# in /etc/profile.d, tools configured in their own config files, npm postinstalls
 # kept, self-updaters off. What stays in each Dockerfile: the base image, the
 # runtime user, the ENV lines (a Dockerfile ENV cannot be produced by a script),
 # the base packages listed under "Prerequisites", and the smoke test.
@@ -28,6 +30,8 @@
 #   CLAUDE_CODE_VERSION     @anthropic-ai/claude-code
 #   CODEX_VERSION           @openai/codex
 #   OPENCODE_VERSION        opencode-ai
+#   OBSCURA_VERSION         obscura headless browser, without the leading v
+#   OBSCURA_SHA256          sha256 of its obscura-x86_64-linux.tar.gz release asset
 #   TOOLCHAIN_USER          runtime user; must already exist
 #
 # Optional environment:
@@ -40,6 +44,13 @@
 #   GITHUB_TOKEN_FILE       optional build secret that lifts the GitHub API rate
 #                           limit for cargo-binstall (default /run/secrets/github_token).
 #                           Read only inside the binstall step, never layered.
+#   TOOLCHAIN_CACHE         absolute path of the package-cache directory (workspace:
+#                           /cache), where a deployment mounts one shared volume. Unset:
+#                           no such directory, the pnpm store stays under ~/.cache.
+#                           Set: the directory is created owned by the runtime user,
+#                           npm's cache and pnpm's store point into it, and
+#                           /etc/profile.d exports CARGO_HOME and CARGO_INSTALL_ROOT
+#                           (the Dockerfile sets the same two as ENV, after this RUN).
 #
 # Prerequisites the Dockerfile must provide (this script only adds the
 # toolchain-specific packages below): curl, ca-certificates, git, tar, xz-utils,
@@ -52,11 +63,13 @@ set -eu
 
 : "${RUST_TOOLCHAIN:?}" "${FLUTTER_VERSION:?}" "${SCCACHE_VERSION:?}" \
   "${CARGO_BINSTALL_VERSION:?}" "${CLAUDE_CODE_VERSION:?}" "${CODEX_VERSION:?}" \
-  "${OPENCODE_VERSION:?}" "${TOOLCHAIN_USER:?}"
+  "${OPENCODE_VERSION:?}" "${OBSCURA_VERSION:?}" "${OBSCURA_SHA256:?}" \
+  "${TOOLCHAIN_USER:?}"
 TOOLCHAIN_HOME="${TOOLCHAIN_HOME:-/home/${TOOLCHAIN_USER}}"
 TOOLCHAIN_UID="${TOOLCHAIN_UID:-10001}"
 TOOLCHAIN_GID="${TOOLCHAIN_GID:-10001}"
 GITHUB_TOKEN_FILE="${GITHUB_TOKEN_FILE:-/run/secrets/github_token}"
+TOOLCHAIN_CACHE="${TOOLCHAIN_CACHE:-}"
 
 # runuser lives in /usr/sbin, which a base image's PATH may not include.
 PATH="${PATH}:/usr/local/sbin:/usr/sbin:/sbin"
@@ -71,6 +84,10 @@ id "$TOOLCHAIN_USER" >/dev/null 2>&1 || { echo "user $TOOLCHAIN_USER does not ex
 if [ -n "${NODE_VERSION:-}" ]; then
   : "${NODE_SHA256:?NODE_SHA256 is required with NODE_VERSION}"
 fi
+case "$TOOLCHAIN_CACHE" in
+  "" | /?*) ;;
+  *) echo "TOOLCHAIN_CACHE must be an absolute path: $TOOLCHAIN_CACHE" >&2; exit 1 ;;
+esac
 
 export DEBIAN_FRONTEND=noninteractive
 export RUSTUP_HOME=/opt/rustup
@@ -125,6 +142,11 @@ CARGO_HOME=/opt/cargo sh "${work}/rustup-init.sh" -y --no-modify-path --profile 
     export GITHUB_TOKEN
   fi
   export CARGO_HOME=/opt/cargo
+  # Explicit, because an inherited CARGO_INSTALL_ROOT would win over CARGO_HOME
+  # and put these tools in the runtime user's home (cargo-binstall v1.23.0,
+  # crates/bin/src/initialise.rs: --root, CARGO_INSTALL_ROOT, install.root,
+  # CARGO_HOME; verified 2026-10-11).
+  export CARGO_INSTALL_ROOT=/opt/cargo
   fetch "https://github.com/cargo-bins/cargo-binstall/releases/download/${CARGO_BINSTALL_VERSION}/cargo-binstall-x86_64-unknown-linux-musl.tgz" \
     "${work}/cargo-binstall.tgz"
   tar -xzf "${work}/cargo-binstall.tgz" -C "$work"
@@ -141,6 +163,24 @@ fetch "https://github.com/mozilla/sccache/releases/download/v${SCCACHE_VERSION}/
 tar -xzf "${work}/sccache.tar.gz" -C "$work"
 install -m 0755 "${work}/${sccache_base}/sccache" /usr/local/bin/sccache
 rm -rf "${work:?}/${sccache_base:?}" "${work}/sccache.tar.gz"
+
+# ---- obscura (headless browser with its own renderer, no Chromium) -------
+# For screenshots of a site the agent serves on 127.0.0.1:
+#   obscura fetch http://127.0.0.1:3000 --allow-private-network --screenshot shot.png
+# The release asset carries `obscura` and `obscura-worker` (which `obscura
+# scrape` looks for next to `obscura`), so both go in one directory. They need
+# only glibc 2.35+ and libgcc_s, and bundle their fonts (Liberation, DejaVu,
+# Noto Color Emoji): no fontconfig or font packages. Upstream publishes no
+# checksum file; OBSCURA_SHA256 is the asset's own digest.
+obscura_tar="obscura-x86_64-linux.tar.gz"
+fetch "https://github.com/h4ckf0r0day/obscura/releases/download/v${OBSCURA_VERSION}/${obscura_tar}" \
+  "${work}/${obscura_tar}"
+(cd "$work" && printf '%s  %s\n' "$OBSCURA_SHA256" "$obscura_tar" | sha256sum -c -)
+install -d /opt/obscura/bin
+tar -xzf "${work}/${obscura_tar}" -C /opt/obscura/bin --no-same-owner obscura obscura-worker
+rm -f "${work}/${obscura_tar}"
+[ "$(/opt/obscura/bin/obscura --version)" = "obscura ${OBSCURA_VERSION}" ] \
+  || { echo "obscura version mismatch" >&2; exit 1; }
 
 # ---- Flutter SDK (bundles Dart) ----------------------------------------
 fetch "https://storage.googleapis.com/flutter_infra_release/releases/stable/linux/flutter_linux_${FLUTTER_VERSION}-stable.tar.xz" \
@@ -176,9 +216,33 @@ export FLUTTER_HOME=/opt/flutter
 export COREPACK_ENABLE_DOWNLOAD_PROMPT=0
 export DISABLE_AUTOUPDATER=1
 export OPENCODE_DISABLE_AUTOUPDATE=1
-case ":$PATH:" in *:/opt/cargo/bin:*) ;; *) PATH="$HOME/.cargo/bin:/opt/cargo/bin:/opt/flutter/bin:/opt/flutter/bin/cache/dart-sdk/bin:$PATH" ;; esac
+case ":$PATH:" in *:/opt/cargo/bin:*) ;; *) PATH="$HOME/.cargo/bin:/opt/cargo/bin:/opt/flutter/bin:/opt/flutter/bin/cache/dart-sdk/bin:/opt/obscura/bin:$PATH" ;; esac
 export PATH
 EOF
+
+# ---- Package caches (only when TOOLCHAIN_CACHE is set) -------------------
+# A deployment mounts one volume at TOOLCHAIN_CACHE, and a mount hides whatever
+# the image put there, so only the directory itself is created (a missing mount
+# target would be root-owned); each tool makes its own subdirectory on first
+# use. After the `npm install -g` and `npm cache clean` above, which must not
+# write into the cache.
+#   cargo: CARGO_HOME is the shared cache (registry, git checkouts, package-cache
+#     lock); CARGO_INSTALL_ROOT keeps what `cargo install` and cargo-binstall
+#     install private, under the runtime user's home. rustup puts $CARGO_HOME/bin
+#     first on the PATH of everything cargo starts, so nothing may install there.
+#   npm: `cache` in the global npmrc of Node's prefix (<prefix>/etc/npmrc),
+#     written by npm itself, which also creates etc/. Not an npm_config_* env var.
+#   pnpm: the store, below, in the same place as without a cache directory.
+# Mode 1777: a dev container that gives the runtime user the host's uid
+# (updateRemoteUserUID) must still create its cache directories here.
+if [ -n "$TOOLCHAIN_CACHE" ]; then
+  install -d -m 1777 -o "$TOOLCHAIN_UID" -g "$TOOLCHAIN_GID" "$TOOLCHAIN_CACHE"
+  npm config set cache "${TOOLCHAIN_CACHE}/npm" --location=global
+  cat >> /etc/profile.d/10-toolchains.sh <<EOF
+export CARGO_HOME=${TOOLCHAIN_CACHE}/cargo
+export CARGO_INSTALL_ROOT=${TOOLCHAIN_HOME}/.cargo
+EOF
+fi
 
 # ---- Runtime-user state, created as that user ---------------------------
 as_user() {
@@ -208,8 +272,10 @@ as_user mkdir -p "${TOOLCHAIN_HOME}/.local/share" "${TOOLCHAIN_HOME}/.local/bin"
 # changed between majors (verified): pnpm 10 reads the ini `rc` and ignores
 # config.yaml; pnpm 12 reads `config.yaml` (storeDir) and ignores `rc`.
 # corepack picks each project's own `packageManager` version, so both must work.
+# The store is under TOOLCHAIN_CACHE when set, else under ~/.cache.
+pnpm_store="${TOOLCHAIN_CACHE:-${TOOLCHAIN_HOME}/.cache}/pnpm-store"
 as_user mkdir -p "${TOOLCHAIN_HOME}/.config/pnpm"
-printf 'store-dir=%s/.cache/pnpm-store\n' "$TOOLCHAIN_HOME" \
+printf 'store-dir=%s\n' "$pnpm_store" \
   | as_user tee "${TOOLCHAIN_HOME}/.config/pnpm/rc" >/dev/null
-printf 'storeDir: %s/.cache/pnpm-store\n' "$TOOLCHAIN_HOME" \
+printf 'storeDir: %s\n' "$pnpm_store" \
   | as_user tee "${TOOLCHAIN_HOME}/.config/pnpm/config.yaml" >/dev/null

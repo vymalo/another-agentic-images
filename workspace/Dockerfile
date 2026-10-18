@@ -10,10 +10,11 @@
 # (CI checks: tools/check-pins.sh). Build from the REPO ROOT:
 #   docker buildx build -f workspace/Dockerfile .
 #
-# Layout rule (CLAUDE.md): toolchains live under /opt (Node under /usr/local),
+# Layout rules (CLAUDE.md): toolchains live under /opt (Node under /usr/local),
 # NEVER under $HOME, so a deployment can mount volumes over /home/agent without
-# hiding them. CARGO_HOME stays at its default (~/.cargo) so crate caches and
-# `cargo install`ed tools land wherever the deployment persists the home.
+# hiding them. Package caches (cargo, npm, pnpm) live in /cache, where a
+# deployment mounts one shared volume; `cargo install`ed tools stay private in
+# ~/.cargo. See "Package caches" below.
 #
 # No default agent process: ENTRYPOINT is tini only, and the coder image adds
 # its binary on top. Not included: Python, the ACP adapters (claude-agent-acp,
@@ -40,6 +41,14 @@ ARG CARGO_BINSTALL_VERSION=v1.23.0
 ARG CLAUDE_CODE_VERSION=2.1.283
 ARG CODEX_VERSION=0.158.0
 ARG OPENCODE_VERSION=1.18.33
+# obscura, a headless browser CLI with its own renderer (screenshots without
+# Chromium or Playwright), and the sha256 of its obscura-x86_64-linux.tar.gz.
+# Verified 2026-10-09: latest tag v0.2.4 (2026-10-04),
+# https://github.com/h4ckf0r0day/obscura/releases/tag/v0.2.4; the release has
+# no checksum file, so the digest is of the downloaded asset (two downloads
+# hashed the same).
+ARG OBSCURA_VERSION=0.2.4
+ARG OBSCURA_SHA256=757e7b597ba5cdd53af9fc701e0a9b80f0a8d788f545d4f82ec9ad32db77f000
 # Node 24 (LTS "Krypton"), from nodejs.org, verified against its sha256.
 # Verified 2026-09-29: https://nodejs.org/dist/v24.21.0/SHASUMS256.txt
 # (node-v24.21.0-linux-x64.tar.xz); the downloaded tarball hashed the same.
@@ -49,6 +58,9 @@ ARG NODE_SHA256=fd8e59d5a511510f6a298afb548f18c7d2b1be404d8b4a27d94fbe49f56cb2d6
 # state (Flutter cache, pnpm config, mount-point parents) as it.
 ARG TOOLCHAIN_USER=agent
 ARG TOOLCHAIN_HOME=/home/agent
+# Where the package caches live (see "Package caches" below). agent-canvas does
+# not pass it and keeps its caches under the home.
+ARG TOOLCHAIN_CACHE=/cache
 
 LABEL org.opencontainers.image.source="https://github.com/vymalo/another-agentic-images" \
       org.opencontainers.image.description="Lean workspace: Rust, Flutter/Dart and Node toolchains plus the Claude Code, Codex and OpenCode CLIs on Debian" \
@@ -92,10 +104,10 @@ RUN groupadd --gid 10001 agent \
 ENV RUSTUP_HOME=/opt/rustup \
     FLUTTER_HOME=/opt/flutter \
     COREPACK_ENABLE_DOWNLOAD_PROMPT=0
-# ~/.cargo/bin first so tools the agent `cargo install`s (persisted with the
-# home) win; the rustup launchers come from /opt/cargo/bin. Node is in
+# ~/.cargo/bin first so tools the agent `cargo install`s (CARGO_INSTALL_ROOT,
+# below) win; the rustup launchers come from /opt/cargo/bin. Node is in
 # /usr/local/bin, already on Debian's PATH.
-ENV PATH=/home/agent/.cargo/bin:/opt/cargo/bin:/opt/flutter/bin:/opt/flutter/bin/cache/dart-sdk/bin:${PATH}
+ENV PATH=/home/agent/.cargo/bin:/opt/cargo/bin:/opt/flutter/bin:/opt/flutter/bin/cache/dart-sdk/bin:/opt/obscura/bin:${PATH}
 
 # ---- Toolchains ----------------------------------------------------------
 # One RUN, one layer: the chown of /opt and every temporary download happen in
@@ -106,8 +118,34 @@ RUN --mount=type=bind,source=toolchains,target=/toolchains \
     --mount=type=secret,id=github_token \
     sh /toolchains/install.sh
 
+# ---- Package caches ----------------------------------------------------
+# The caches of cargo, npm and pnpm live in /cache, not in the home (lost when a
+# run's environment is released). A deployment mounts one volume there, shared by
+# the owner's deployments: one trust domain, so whatever a run writes there every
+# run reads. With nothing mounted /cache is a plain directory owned by agent. A
+# mounted volume hides what the image put in /cache, so only the directory exists
+# (toolchains/install.sh creates it and points npm and pnpm at it, in their own
+# config files) and each tool creates its own subdirectory on first use.
+# These ENV lines follow the toolchains RUN on purpose: that RUN runs
+# cargo-binstall as root, which must install into /opt/cargo, not into
+# CARGO_INSTALL_ROOT.
+#   CARGO_HOME: registry, git checkouts, the package-cache lock. rustup's proxies
+#     in /opt/cargo/bin (RUSTUP_HOME=/opt/rustup) need nothing in it. rustup puts
+#     $CARGO_HOME/bin first on the PATH of everything cargo starts, so keep it empty.
+#   CARGO_INSTALL_ROOT: where `cargo install` and cargo-binstall put bin/. Private,
+#     in the home: a shared bin/ first on PATH would let one run plant a fake cargo
+#     or git for every later run.
+# Verified 2026-10-11 by docs, source and running cargo 1.94.1, rustup 1.29.1 and
+# cargo-binstall v1.23.0: cargo install and cargo-binstall both take
+# CARGO_INSTALL_ROOT before CARGO_HOME (doc.rust-lang.org/cargo/commands/
+# cargo-install.html; cargo-binstall crates/bin/src/initialise.rs at v1.23.0);
+# cargo creates a missing CARGO_HOME (src/cargo/util/flock.rs, cargo 1.94.0);
+# rustup's proxies run with CARGO_HOME elsewhere (src/toolchain.rs, rustup 1.29.0).
+# Unverified: the same on the pinned cargo 1.98.1; the smoke test checks it.
 ENV DISABLE_AUTOUPDATER=1 \
-    OPENCODE_DISABLE_AUTOUPDATE=1
+    OPENCODE_DISABLE_AUTOUPDATE=1 \
+    CARGO_HOME=${TOOLCHAIN_CACHE}/cargo \
+    CARGO_INSTALL_ROOT=${TOOLCHAIN_HOME}/.cargo
 
 # Layout contract, rule 2: a container runtime creates the missing parents of a
 # mount target as root. /workspaces is where the devcontainer CLI mounts a
@@ -122,14 +160,32 @@ WORKDIR /work
 
 # Smoke test, in a LOGIN shell — the environment the agent actually gets. The
 # same list as agent-canvas, minus the ACP adapters it gets from upstream, plus
-# the workspace-specific checks (git, ssh, tini, the linker, /work).
+# the workspace-specific checks (git, ssh, tini, the linker, /work, /cache).
+# obscura takes a real screenshot of a page Node serves on 127.0.0.1 (no network).
+# The cargo lines install a crate with no dependencies, offline: CARGO_HOME and
+# CARGO_INSTALL_ROOT do not exist in the image, cargo must create them, and the
+# binary must land in the private root, not in the cache. The checks then remove
+# what they created (and npm's log directory), so /cache ships empty.
 RUN bash -lc 'set -e; \
       rustc --version; cargo --version; cargo clippy --version; rustfmt --version; \
       just --version; cargo nextest --version; cargo deny --version; sccache --version; \
       flutter --version; dart --version; node --version; command -v pnpm; \
       claude --version; codex --version; opencode --version; \
-      test "$(corepack pnpm@10.33.0 config get store-dir)" = /home/agent/.cache/pnpm-store; \
-      test "$(pnpm config get store-dir)" = /home/agent/.cache/pnpm-store; \
+      obscura --version; \
+      node -e "require(\"http\").createServer((q,s)=>s.writeHead(200,{\"content-type\":\"text/html\"}).end(\"<h1>obscura</h1>\")).listen(8787,\"127.0.0.1\")" & srv=$!; \
+      for _ in $(seq 50); do curl -fs -o /dev/null http://127.0.0.1:8787/ && break; sleep 0.2; done; \
+      obscura fetch http://127.0.0.1:8787/ --allow-private-network --screenshot /tmp/s.png; \
+      kill "$srv"; test -s /tmp/s.png; rm -f /tmp/s.png; \
+      test "$(corepack pnpm@10.33.0 config get store-dir)" = /cache/pnpm-store; \
+      test "$(pnpm config get store-dir)" = /cache/pnpm-store; \
+      test "$(npm config get cache)" = /cache/npm; \
+      test -O /cache; test -w /cache; test -k /cache; \
+      test "$CARGO_HOME" = /cache/cargo; test "$CARGO_INSTALL_ROOT" = /home/agent/.cargo; \
+      env -i HOME=/home/agent /bin/bash -lc "test \"\$CARGO_HOME\" = /cache/cargo && test \"\$CARGO_INSTALL_ROOT\" = /home/agent/.cargo"; \
+      s=$(mktemp -d); cargo new --quiet --vcs none --name cachesmoke "$s/p"; \
+      cargo install --quiet --offline --path "$s/p"; \
+      test -x "$CARGO_INSTALL_ROOT/bin/cachesmoke"; test -d "$CARGO_HOME"; test ! -e "$CARGO_HOME/bin"; \
+      rm -rf "$s" "$CARGO_HOME" "$CARGO_INSTALL_ROOT" /cache/npm; \
       test -O /home/agent/.local/share; \
       git --version; ssh -V; tini --version; cc --version; \
       test -w /work; \
