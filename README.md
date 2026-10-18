@@ -168,3 +168,11 @@ wire_api = "responses"
 **Scenarios.** The mocks answer plain text by default. A prompt containing `[mock:tool-call]` gets a tool call that writes `hello.txt` (then the final text once the tool result comes back), which is what the `dev/try-*.sh` scripts use. `[mock:rate-limit]` and `[mock:server-error]` (or the header `X-Mock-Scenario: rate-limit|server-error`) return the provider's 429 and 500 error bodies. Streaming and non-streaming requests are both served. Details, precedence and what was verified against the real CLIs: [`dev/wiremock/README.md`](dev/wiremock/README.md).
 
 `.github/workflows/compose.yml` runs `docker compose config`, starts the mocks, curls them and runs the three `try-*.sh` scripts in the pinned workspace image, whenever `compose.yaml` or `dev/` change. To try newer tools, bump the pinned `workspace` / `agent-canvas` tag and digest in `compose.yaml` (both tags are immutable).
+
+## Roadmap and contributing
+
+- **Roadmap:** the product roadmap to launch, with every open piece of work as an issue, is
+  [`ROADMAP.md` in another-agentic-system](https://github.com/vymalo/another-agentic-system/blob/main/ROADMAP.md).
+- **Contributing:** [`CONTRIBUTING.md`](CONTRIBUTING.md).
+- **Security:** report a vulnerability privately, as [`SECURITY.md`](SECURITY.md) says.
+- **Licence:** [MIT](LICENSE).
