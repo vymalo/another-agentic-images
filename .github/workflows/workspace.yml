@@ -38,6 +38,9 @@ on:
       - toolchains/**
       - .dockerignore
       - tools/check-pins.sh
+      - tools/check-language-servers.sh
+      - tools/lsp-probe.mjs
+      - tools/lsp-fixtures/**
       - tools/check-devcontainer.sh
       - tools/image-size.sh
       - .github/workflows/workspace.yml
@@ -47,6 +50,9 @@ on:
       - toolchains/**
       - .dockerignore
       - tools/check-pins.sh
+      - tools/check-language-servers.sh
+      - tools/lsp-probe.mjs
+      - tools/lsp-fixtures/**
       - tools/check-devcontainer.sh
       - tools/image-size.sh
       - .github/workflows/workspace.yml
@@ -232,6 +238,20 @@ jobs:
             docker pull "$image"
           fi
           sh tools/check-devcontainer.sh "$image"
+
+      # The four language servers must answer (tools/check-language-servers.sh):
+      # each one, with no network and as the runtime user, reports a deliberate
+      # error in a fixture and finds a definition. The image is in the daemon
+      # already (loaded above on a pull request, pulled by the previous step on
+      # main). Plain `docker run`, so the default builder is fine.
+      - name: Language servers answer
+        if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/')
+        run: |
+          image="${{ steps.meta.outputs.pinned }}"
+          if ! docker image inspect "$image" >/dev/null 2>&1; then
+            docker pull "$image"
+          fi
+          sh tools/check-language-servers.sh "$image"
 
       - name: Summary
         if: github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/'))

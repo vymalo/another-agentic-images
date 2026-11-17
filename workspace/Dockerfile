@@ -49,6 +49,21 @@ ARG OPENCODE_VERSION=1.18.33
 # hashed the same).
 ARG OBSCURA_VERSION=0.2.4
 ARG OBSCURA_SHA256=757e7b597ba5cdd53af9fc701e0a9b80f0a8d788f545d4f82ec9ad32db77f000
+# Language servers (the coder's diagnostics, definition and references tools).
+# Go, from go.dev, and the sha256 of its go1.27.4.linux-amd64.tar.gz. Verified
+# 2026-11-17: https://go.dev/dl/?mode=json (newest stable, 1.27.4). gopls v0.24.0:
+# the proxy.golang.org @latest of golang.org/x/tools/gopls (2026-10-14), whose
+# go.mod says go 1.27.0, so it builds with that Go; GOTOOLCHAIN=local keeps it so.
+ARG GO_VERSION=1.27.4
+ARG GO_SHA256=7226736c2339719cda28fbf3a54d71aa63bcefe376e98cef00034268dab24840
+ARG GOPLS_VERSION=v0.24.0
+# TypeScript 6.0.3, not the 7.0.2 that npm calls latest: the 7.x native port ships
+# no tsserver and typescript-language-server 6.1.0 exits with "Could not find a
+# valid TypeScript installation" (run 2026-11-17). Verified 2026-11-17 with
+# `npm view`: typescript-language-server 6.1.0 and pyright 1.1.414 are latest.
+ARG TYPESCRIPT_VERSION=6.0.3
+ARG TYPESCRIPT_LANGUAGE_SERVER_VERSION=6.1.0
+ARG PYRIGHT_VERSION=1.1.414
 # Node 24 (LTS "Krypton"), from nodejs.org, verified against its sha256.
 # Verified 2026-09-29: https://nodejs.org/dist/v24.21.0/SHASUMS256.txt
 # (node-v24.21.0-linux-x64.tar.xz); the downloaded tarball hashed the same.
@@ -107,7 +122,8 @@ ENV RUSTUP_HOME=/opt/rustup \
 # ~/.cargo/bin first so tools the agent `cargo install`s (CARGO_INSTALL_ROOT,
 # below) win; the rustup launchers come from /opt/cargo/bin. Node is in
 # /usr/local/bin, already on Debian's PATH.
-ENV PATH=/home/agent/.cargo/bin:/opt/cargo/bin:/opt/flutter/bin:/opt/flutter/bin/cache/dart-sdk/bin:/opt/obscura/bin:${PATH}
+ENV GOTOOLCHAIN=local
+ENV PATH=/home/agent/.cargo/bin:/opt/cargo/bin:/opt/go/bin:/opt/go-tools/bin:/opt/flutter/bin:/opt/flutter/bin/cache/dart-sdk/bin:/opt/obscura/bin:${PATH}
 
 # ---- Toolchains ----------------------------------------------------------
 # One RUN, one layer: the chown of /opt and every temporary download happen in
@@ -145,7 +161,12 @@ RUN --mount=type=bind,source=toolchains,target=/toolchains \
 ENV DISABLE_AUTOUPDATER=1 \
     OPENCODE_DISABLE_AUTOUPDATE=1 \
     CARGO_HOME=${TOOLCHAIN_CACHE}/cargo \
-    CARGO_INSTALL_ROOT=${TOOLCHAIN_HOME}/.cargo
+    CARGO_INSTALL_ROOT=${TOOLCHAIN_HOME}/.cargo \
+    GOMODCACHE=${TOOLCHAIN_CACHE}/go/mod
+# GOMODCACHE: downloaded Go modules, shared like the cargo registry (one trust
+# domain; modules are checked against the checksum database). GOPATH keeps its
+# default ~/go, made by go as the runtime user on first use; GOCACHE (the build
+# cache) stays private under ~/.cache.
 
 # Layout contract, rule 2: a container runtime creates the missing parents of a
 # mount target as root. /workspaces is where the devcontainer CLI mounts a
@@ -172,6 +193,10 @@ RUN bash -lc 'set -e; \
       flutter --version; dart --version; node --version; command -v pnpm; \
       claude --version; codex --version; opencode --version; \
       obscura --version; \
+      rust-analyzer --version; go version; gopls version; \
+      typescript-language-server --version; tsc --version; pyright --version; \
+      test "$(go env GOTOOLCHAIN)" = local; test ! -e /home/agent/go; \
+      test "$(go env GOMODCACHE)" = /cache/go/mod; \
       node -e "require(\"http\").createServer((q,s)=>s.writeHead(200,{\"content-type\":\"text/html\"}).end(\"<h1>obscura</h1>\")).listen(8787,\"127.0.0.1\")" & srv=$!; \
       for _ in $(seq 50); do curl -fs -o /dev/null http://127.0.0.1:8787/ && break; sleep 0.2; done; \
       obscura fetch http://127.0.0.1:8787/ --allow-private-network --screenshot /tmp/s.png; \

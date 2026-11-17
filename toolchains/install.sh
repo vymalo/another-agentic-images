@@ -1,8 +1,9 @@
 #!/bin/sh
 # Shared toolchain recipe for every image in this repo.
 #
-# Installs Rust, Flutter/Dart, Node tooling, the coding-agent CLIs and the
-# obscura headless browser, and writes /etc/profile.d/10-toolchains.sh. Each
+# Installs Rust, Flutter/Dart, Go, Node tooling, the coding-agent CLIs, the four
+# language servers (rust-analyzer, gopls, typescript-language-server, pyright) and
+# the obscura headless browser, and writes /etc/profile.d/10-toolchains.sh. Each
 # Dockerfile passes the pins and the runtime user as build ARGs (a RUN step sees
 # ARGs as environment variables), then runs this script ONCE, as root, in a
 # single RUN:
@@ -32,6 +33,12 @@
 #   OPENCODE_VERSION        opencode-ai
 #   OBSCURA_VERSION         obscura headless browser, without the leading v
 #   OBSCURA_SHA256          sha256 of its obscura-x86_64-linux.tar.gz release asset
+#   GO_VERSION              Go toolchain, without the leading go (official tarball)
+#   GO_SHA256               sha256 of its go<GO_VERSION>.linux-amd64.tar.gz
+#   GOPLS_VERSION           golang.org/x/tools/gopls, with the leading v; must support GO_VERSION
+#   TYPESCRIPT_VERSION      typescript (the tsserver that typescript-language-server drives)
+#   TYPESCRIPT_LANGUAGE_SERVER_VERSION  typescript-language-server
+#   PYRIGHT_VERSION         pyright (a Node program; no Python interpreter is installed)
 #   TOOLCHAIN_USER          runtime user; must already exist
 #
 # Optional environment:
@@ -49,8 +56,9 @@
 #                           no such directory, the pnpm store stays under ~/.cache.
 #                           Set: the directory is created owned by the runtime user,
 #                           npm's cache and pnpm's store point into it, and
-#                           /etc/profile.d exports CARGO_HOME and CARGO_INSTALL_ROOT
-#                           (the Dockerfile sets the same two as ENV, after this RUN).
+#                           /etc/profile.d exports CARGO_HOME, CARGO_INSTALL_ROOT and
+#                           GOMODCACHE (the Dockerfile sets the same as ENV, after
+#                           this RUN).
 #
 # Prerequisites the Dockerfile must provide (this script only adds the
 # toolchain-specific packages below): curl, ca-certificates, git, tar, xz-utils,
@@ -64,6 +72,8 @@ set -eu
 : "${RUST_TOOLCHAIN:?}" "${FLUTTER_VERSION:?}" "${SCCACHE_VERSION:?}" \
   "${CARGO_BINSTALL_VERSION:?}" "${CLAUDE_CODE_VERSION:?}" "${CODEX_VERSION:?}" \
   "${OPENCODE_VERSION:?}" "${OBSCURA_VERSION:?}" "${OBSCURA_SHA256:?}" \
+  "${GO_VERSION:?}" "${GO_SHA256:?}" "${GOPLS_VERSION:?}" \
+  "${TYPESCRIPT_VERSION:?}" "${TYPESCRIPT_LANGUAGE_SERVER_VERSION:?}" "${PYRIGHT_VERSION:?}" \
   "${TOOLCHAIN_USER:?}"
 TOOLCHAIN_HOME="${TOOLCHAIN_HOME:-/home/${TOOLCHAIN_USER}}"
 TOOLCHAIN_UID="${TOOLCHAIN_UID:-10001}"
@@ -131,7 +141,7 @@ command -v corepack >/dev/null 2>&1 || { echo "node has no corepack" >&2; exit 1
 fetch https://sh.rustup.rs "${work}/rustup-init.sh"
 CARGO_HOME=/opt/cargo sh "${work}/rustup-init.sh" -y --no-modify-path --profile minimal \
   --default-toolchain "${RUST_TOOLCHAIN}" \
-  -c rustfmt -c clippy -c rust-src -c llvm-tools-preview \
+  -c rustfmt -c clippy -c rust-src -c llvm-tools-preview -c rust-analyzer \
   -t wasm32-unknown-unknown
 
 # ---- Cargo tools (prebuilt via cargo-binstall; compile only as a last
@@ -182,6 +192,27 @@ rm -f "${work}/${obscura_tar}"
 [ "$(/opt/obscura/bin/obscura --version)" = "obscura ${OBSCURA_VERSION}" ] \
   || { echo "obscura version mismatch" >&2; exit 1; }
 
+# ---- Go and gopls (the Go language server) -------------------------------
+# The official tarball, verified against a pinned sha256, extracted to /opt/go
+# (root-owned: nothing at run time writes to the toolchain). gopls is built with
+# that Go into /opt/go-tools/bin, with a throwaway GOPATH, module cache and build
+# cache under $work, removed below: the layer keeps only the binary.
+# GOTOOLCHAIN=local so no Go downloads another toolchain, here or at run time.
+go_tar="go${GO_VERSION}.linux-amd64.tar.gz"
+fetch "https://go.dev/dl/${go_tar}" "${work}/${go_tar}"
+(cd "$work" && printf '%s  %s\n' "$GO_SHA256" "$go_tar" | sha256sum -c -)
+tar -xzf "${work}/${go_tar}" -C /opt --no-same-owner
+rm -f "${work}/${go_tar}"
+[ "$(GOTOOLCHAIN=local /opt/go/bin/go env GOVERSION)" = "go${GO_VERSION}" ] \
+  || { echo "go version mismatch" >&2; exit 1; }
+install -d /opt/go-tools/bin
+env GOTOOLCHAIN=local GOBIN=/opt/go-tools/bin \
+  GOPATH="${work}/gopath" GOMODCACHE="${work}/gomod" GOCACHE="${work}/gocache" \
+  /opt/go/bin/go install "golang.org/x/tools/gopls@${GOPLS_VERSION}"
+# The module cache is read-only on purpose; root may still remove it.
+rm -rf "${work}/gopath" "${work}/gomod" "${work}/gocache"
+[ -x /opt/go-tools/bin/gopls ] || { echo "gopls was not built" >&2; exit 1; }
+
 # ---- Flutter SDK (bundles Dart) ----------------------------------------
 fetch "https://storage.googleapis.com/flutter_infra_release/releases/stable/linux/flutter_linux_${FLUTTER_VERSION}-stable.tar.xz" \
   "${work}/flutter.tar.xz"
@@ -200,6 +231,17 @@ npm install -g --no-fund --no-audit \
   "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}" \
   "@openai/codex@${CODEX_VERSION}" \
   "opencode-ai@${OPENCODE_VERSION}"
+
+# ---- Language servers on Node: TypeScript and Python (pyright) ------------
+# rust-analyzer comes with rustup above and gopls with Go. typescript-language-
+# server needs a typescript that has a tsserver, and the TypeScript 7 native
+# port ships none (verified 2026-11-17: the server refuses to start with 7.0.2),
+# so TYPESCRIPT_VERSION stays on 6.x. pyright is a Node program: no Python
+# interpreter is added, so it cannot see a project's installed packages.
+npm install -g --no-fund --no-audit \
+  "typescript@${TYPESCRIPT_VERSION}" \
+  "typescript-language-server@${TYPESCRIPT_LANGUAGE_SERVER_VERSION}" \
+  "pyright@${PYRIGHT_VERSION}"
 npm cache clean --force
 
 # The agent runs as the runtime user (uid 10001) and may add toolchains or
@@ -216,7 +258,8 @@ export FLUTTER_HOME=/opt/flutter
 export COREPACK_ENABLE_DOWNLOAD_PROMPT=0
 export DISABLE_AUTOUPDATER=1
 export OPENCODE_DISABLE_AUTOUPDATE=1
-case ":$PATH:" in *:/opt/cargo/bin:*) ;; *) PATH="$HOME/.cargo/bin:/opt/cargo/bin:/opt/flutter/bin:/opt/flutter/bin/cache/dart-sdk/bin:/opt/obscura/bin:$PATH" ;; esac
+export GOTOOLCHAIN=local
+case ":$PATH:" in *:/opt/cargo/bin:*) ;; *) PATH="$HOME/.cargo/bin:/opt/cargo/bin:/opt/go/bin:/opt/go-tools/bin:/opt/flutter/bin:/opt/flutter/bin/cache/dart-sdk/bin:/opt/obscura/bin:$PATH" ;; esac
 export PATH
 EOF
 
@@ -230,6 +273,12 @@ EOF
 #     lock); CARGO_INSTALL_ROOT keeps what `cargo install` and cargo-binstall
 #     install private, under the runtime user's home. rustup puts $CARGO_HOME/bin
 #     first on the PATH of everything cargo starts, so nothing may install there.
+#   go: GOMODCACHE is the shared cache (downloaded modules, verified against the
+#     checksum database by default). GOPATH keeps its default, ~/go, which the go
+#     command creates on first use as the runtime user: nothing is made here, so
+#     no root-owned directory appears under the home. GOCACHE (the build cache)
+#     stays private under ~/.cache: it is not a package cache, and sharing it
+#     would hand compiled objects from one run to every other.
 #   npm: `cache` in the global npmrc of Node's prefix (<prefix>/etc/npmrc),
 #     written by npm itself, which also creates etc/. Not an npm_config_* env var.
 #   pnpm: the store, below, in the same place as without a cache directory.
@@ -241,6 +290,7 @@ if [ -n "$TOOLCHAIN_CACHE" ]; then
   cat >> /etc/profile.d/10-toolchains.sh <<EOF
 export CARGO_HOME=${TOOLCHAIN_CACHE}/cargo
 export CARGO_INSTALL_ROOT=${TOOLCHAIN_HOME}/.cargo
+export GOMODCACHE=${TOOLCHAIN_CACHE}/go/mod
 EOF
 fi
 

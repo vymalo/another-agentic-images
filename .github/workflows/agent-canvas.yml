@@ -28,6 +28,9 @@ on:
       - toolchains/**
       - .dockerignore
       - tools/check-pins.sh
+      - tools/check-language-servers.sh
+      - tools/lsp-probe.mjs
+      - tools/lsp-fixtures/**
       - tools/image-size.sh
       - .github/workflows/agent-canvas.yml
   pull_request:
@@ -36,6 +39,9 @@ on:
       - toolchains/**
       - .dockerignore
       - tools/check-pins.sh
+      - tools/check-language-servers.sh
+      - tools/lsp-probe.mjs
+      - tools/lsp-fixtures/**
       - tools/image-size.sh
       - .github/workflows/agent-canvas.yml
   workflow_dispatch:
@@ -117,6 +123,36 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           cache-from: type=registry,ref=${{ steps.meta.outputs.cache }}
           cache-to: ${{ (github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/'))) && format('type=registry,ref={0},mode=max', steps.meta.outputs.cache) || '' }}
+
+      # The four language servers must answer (tools/check-language-servers.sh):
+      # each one, with no network and as the runtime user, reports a deliberate
+      # error in a fixture and finds a definition. The check runs the image, so it
+      # must be in the Docker daemon. A pull request pushed nothing, so build again
+      # with `load: true`: every layer is a cache hit in this builder (the build
+      # above just made them, and the registry cache holds them). main and tags
+      # pushed the image above and pull it.
+      - name: Load the image into the Docker daemon
+        if: github.event_name == 'pull_request'
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: agent-canvas/Dockerfile
+          platforms: linux/amd64
+          load: true
+          provenance: false
+          secrets: |
+            github_token=${{ secrets.GITHUB_TOKEN }}
+          tags: ${{ steps.meta.outputs.pinned }}
+          cache-from: type=registry,ref=${{ steps.meta.outputs.cache }}
+
+      - name: Language servers answer
+        if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/')
+        run: |
+          image="${{ steps.meta.outputs.pinned }}"
+          if [ "${{ github.event_name }}" != pull_request ]; then
+            docker pull "$image"
+          fi
+          sh tools/check-language-servers.sh "$image"
 
       - name: Summary
         if: github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/'))

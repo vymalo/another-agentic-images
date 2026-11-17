@@ -10,7 +10,8 @@ b=workspace/Dockerfile
 status=0
 for name in RUST_TOOLCHAIN FLUTTER_VERSION SCCACHE_VERSION CARGO_BINSTALL_VERSION \
             CLAUDE_CODE_VERSION CODEX_VERSION OPENCODE_VERSION \
-            OBSCURA_VERSION OBSCURA_SHA256; do
+            OBSCURA_VERSION OBSCURA_SHA256 GO_VERSION GO_SHA256 GOPLS_VERSION \
+            TYPESCRIPT_VERSION TYPESCRIPT_LANGUAGE_SERVER_VERSION PYRIGHT_VERSION; do
   va="$(sed -n "s/^ARG ${name}=//p" "$a")"
   vb="$(sed -n "s/^ARG ${name}=//p" "$b")"
   if [ -z "$va" ] || [ "$va" != "$vb" ]; then

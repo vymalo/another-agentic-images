@@ -62,6 +62,21 @@ ARG OPENCODE_VERSION=1.18.33
 # hashed the same).
 ARG OBSCURA_VERSION=0.2.4
 ARG OBSCURA_SHA256=757e7b597ba5cdd53af9fc701e0a9b80f0a8d788f545d4f82ec9ad32db77f000
+# Language servers (the coder's diagnostics, definition and references tools).
+# Go, from go.dev, and the sha256 of its go1.27.4.linux-amd64.tar.gz. Verified
+# 2026-11-17: https://go.dev/dl/?mode=json (newest stable, 1.27.4). gopls v0.24.0:
+# the proxy.golang.org @latest of golang.org/x/tools/gopls (2026-10-14), whose
+# go.mod says go 1.27.0, so it builds with that Go; GOTOOLCHAIN=local keeps it so.
+ARG GO_VERSION=1.27.4
+ARG GO_SHA256=7226736c2339719cda28fbf3a54d71aa63bcefe376e98cef00034268dab24840
+ARG GOPLS_VERSION=v0.24.0
+# TypeScript 6.0.3, not the 7.0.2 that npm calls latest: the 7.x native port ships
+# no tsserver and typescript-language-server 6.1.0 exits with "Could not find a
+# valid TypeScript installation" (run 2026-11-17). Verified 2026-11-17 with
+# `npm view`: typescript-language-server 6.1.0 and pyright 1.1.414 are latest.
+ARG TYPESCRIPT_VERSION=6.0.3
+ARG TYPESCRIPT_LANGUAGE_SERVER_VERSION=6.1.0
+ARG PYRIGHT_VERSION=1.1.414
 # The runtime user the base image already has. toolchains/install.sh creates
 # that user's state (Flutter cache, pnpm config, mount-point parents) as it.
 ARG TOOLCHAIN_USER=openhands
@@ -79,7 +94,8 @@ ENV RUSTUP_HOME=/opt/rustup \
     COREPACK_ENABLE_DOWNLOAD_PROMPT=0
 # ~/.cargo/bin first so tools the agent `cargo install`s (persisted on the
 # PVC) win over nothing else; the rustup launchers come from /opt/cargo/bin.
-ENV PATH=/home/openhands/.cargo/bin:/opt/cargo/bin:/opt/flutter/bin:/opt/flutter/bin/cache/dart-sdk/bin:/opt/obscura/bin:${PATH}
+ENV GOTOOLCHAIN=local
+ENV PATH=/home/openhands/.cargo/bin:/opt/cargo/bin:/opt/go/bin:/opt/go-tools/bin:/opt/flutter/bin:/opt/flutter/bin/cache/dart-sdk/bin:/opt/obscura/bin:${PATH}
 
 # ---- Toolchains ----------------------------------------------------------
 # Upstream ships Node (and corepack), Python, git and gcc, so the script only
@@ -120,6 +136,9 @@ RUN bash -lc 'set -e; \
       flutter --version; dart --version; node --version; command -v pnpm; \
       claude --version; codex --version; opencode --version; command -v claude-agent-acp; command -v codex-acp; \
       obscura --version; \
+      rust-analyzer --version; go version; gopls version; \
+      typescript-language-server --version; tsc --version; pyright --version; \
+      test "$(go env GOTOOLCHAIN)" = local; test ! -e /home/openhands/go; \
       node -e "require(\"http\").createServer((q,s)=>s.writeHead(200,{\"content-type\":\"text/html\"}).end(\"<h1>obscura</h1>\")).listen(8787,\"127.0.0.1\")" & srv=$!; \
       for _ in $(seq 50); do curl -fs -o /dev/null http://127.0.0.1:8787/ && break; sleep 0.2; done; \
       obscura fetch http://127.0.0.1:8787/ --allow-private-network --screenshot /tmp/s.png; \
