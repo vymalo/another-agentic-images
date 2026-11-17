@@ -21,6 +21,7 @@ Both run the same install script, [`toolchains/install.sh`](toolchains/install.s
 | Flutter/Dart | Flutter SDK `3.44.4` (bundles Dart), web artifacts precached |
 | Node | upstream Node 24 + corepack shims (pnpm/yarn resolve each project's `packageManager`); pnpm store in `~/.cache/pnpm-store` |
 | Coding agents | Claude Code `2.1.283`, Codex `0.158.0` and OpenCode `1.18.33` CLIs (sign in, terminal use; `opencode serve`/`web`/`acp`). The ACP adapters Agent Canvas drives Claude Code and Codex through (`claude-agent-acp`, `codex-acp`, plus `gemini`) come from upstream's `/acp-node`. Self-updaters are disabled — bump via the `ARG`s |
+| Language servers | [Four, for Rust, TypeScript, Python and Go](#language-servers): `rust-analyzer` (a rustup component), `typescript-language-server` `6.1.0` with `typescript` `6.0.3`, `pyright` `1.1.414`, and Go `1.27.4` with `gopls` `v0.24.0` (in `/opt/go` and `/opt/go-tools`) |
 | Browser | [obscura](https://github.com/h4ckf0r0day/obscura) `0.2.4`: a headless browser with its own renderer, for screenshots without Playwright or Chromium: `obscura fetch http://127.0.0.1:3000 --allow-private-network --screenshot shot.png` ([below](#obscura)) |
 | Native deps | clang, lld, cmake, pkg-config, protobuf-compiler |
 
@@ -31,6 +32,14 @@ Both run the same install script, [`toolchains/install.sh`](toolchains/install.s
 - Its fonts are compiled in (Liberation Sans, Serif and Mono, DejaVu Sans, Noto Color Emoji), so text renders with no font packages in the image. `obscura serve --font-dir <dir>` loads more.
 - It links only glibc (2.35 or later), libm and libgcc_s. The renderer is its own, not Chromium's: upstream says long-tail CSS and font rasterization may differ.
 - The release publishes no checksum file, so `OBSCURA_SHA256` is the digest of the downloaded asset.
+
+<a id="language-servers"></a>**Language servers:** a coding agent can ask them for a file's diagnostics, a definition or references. Both images carry the same four, all under `/opt` or in the global npm prefix:
+- `rust-analyzer`: a component of the pinned Rust toolchain, so the rustup proxy in `/opt/cargo/bin` runs it.
+- `typescript-language-server --stdio` and `tsc`: global npm packages. `typescript` stays on 6.x on purpose: the 7.x native port has no `tsserver`, and the server refuses to start with it (*verified 2026-11-17*).
+- `pyright-langserver --stdio` and `pyright`: a Node program. No Python interpreter is installed, so it reads a project's own files and the stubs it bundles, not its installed packages.
+- `go`, and `gopls serve`: the official Go tarball (sha256-checked) in `/opt/go`, `gopls` built with it in `/opt/go-tools/bin`. `GOTOOLCHAIN=local`, so Go never downloads another toolchain. `GOPATH` is Go's default `~/go`, made by Go on first use.
+- `tools/check-language-servers.sh <image>` proves that all four answer: no network, the runtime user, a fixture per language (`tools/lsp-fixtures/`) with one deliberate error, an error diagnostic and one definition (`tools/lsp-probe.mjs`). Both image workflows run it after the build.
+- Size: *unverified*, roughly +400 MB uncompressed (Go about 250 MB). The workflows report the real figure.
 
 **Layout contract:**
 - Toolchains live under `/opt` (`RUSTUP_HOME=/opt/rustup`, launchers in `/opt/cargo/bin`, `/opt/flutter`), never under `$HOME`, so a deployment can mount persistent volumes over home directories without hiding them.
@@ -51,13 +60,13 @@ Consumed by `WhyThatFunction/home-os` (`charts/apps/values.yaml`, Application `a
 
 | Ecosystem | Baked in |
 |---|---|
-| Rust, Flutter/Dart, coding agents, browser, native deps | Exactly the `agent-canvas` set above (the Rust, Flutter, CLI and obscura pins must match, and CI checks it) |
+| Rust, Flutter/Dart, coding agents, language servers, browser, native deps | Exactly the `agent-canvas` set above (the Rust, Flutter, CLI, language server and obscura pins must match, and CI checks it) |
 | Node | Node `24.21.0` from nodejs.org (pinned by version and sha256, in `/usr/local`) + corepack shims; npm cache and pnpm store in `/cache` ([below](#package-caches)) |
 | Base | git, openssh-client, ca-certificates, gcc/g++/make, libssl-dev, tini |
 
 - User `agent` (uid/gid 10001), home `/home/agent`; `/work` is owned by it, for mirrors and worktrees. `/work/workspaces` and `/workspaces` exist too, also owned by it: they are the parents of mount targets (see [Use it as a dev container](#use-it-as-a-dev-container)), and a container runtime would otherwise create them as root.
 - `ENTRYPOINT ["tini", "--"]` and no default process: the coder image adds its binary.
-- Not included: the ACP adapters (`claude-agent-acp`, `codex-acp`), which `agent-canvas` gets from upstream, and Python.
+- Not included: the ACP adapters (`claude-agent-acp`, `codex-acp`), which `agent-canvas` gets from upstream, and a Python interpreter (`pyright` runs on Node).
 - Same layout contract as `agent-canvas`, with `/home/agent` in place of `/home/openhands`, except that the package caches live in `/cache` ([below](#package-caches)).
 
 **Tags:**
@@ -68,12 +77,13 @@ Consumed by `WhyThatFunction/home-os` (`charts/apps/values.yaml`, Application `a
 
 ### Package caches
 
-The caches of cargo, npm and pnpm live in `/cache`, not in the home, which is lost when a run's environment is released. A deployment mounts one volume there (in Kubernetes a ReadWriteMany one) and the downloads survive. With nothing mounted `/cache` is a plain directory owned by `agent` and everything works as before, without sharing. `agent-canvas` is unchanged: its caches stay under its home.
+The caches of cargo, Go modules, npm and pnpm live in `/cache`, not in the home, which is lost when a run's environment is released. A deployment mounts one volume there (in Kubernetes a ReadWriteMany one) and the downloads survive. With nothing mounted `/cache` is a plain directory owned by `agent` and everything works as before, without sharing. `agent-canvas` is unchanged: its caches stay under its home.
 
 | Tool | Setting | Value | Where it is set |
 |---|---|---|---|
 | cargo | `CARGO_HOME` | `/cache/cargo`: registry, git checkouts, the package-cache lock | `ENV` and `/etc/profile.d/10-toolchains.sh` |
 | `cargo install`, cargo-binstall | `CARGO_INSTALL_ROOT` | `/home/agent/.cargo`: private, first on `PATH` as before | same |
+| Go | `GOMODCACHE` | `/cache/go/mod`: downloaded modules. `GOPATH` stays `~/go` and the build cache `~/.cache/go-build`, private | `ENV` and `/etc/profile.d/10-toolchains.sh` |
 | npm | `cache` | `/cache/npm` | the global npmrc of Node's prefix, `/usr/local/etc/npmrc` |
 | pnpm | `store-dir`, `storeDir` | `/cache/pnpm-store` | `~/.config/pnpm/rc` (pnpm 10) and `config.yaml` (pnpm 12) |
 

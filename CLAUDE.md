@@ -15,8 +15,11 @@ on 2026-09-28.
 
 `agent-canvas` is upstream `ghcr.io/openhands/agent-canvas` (pinned by tag
 **and** digest) plus Rust, Flutter/Dart, corepack, sccache, the Claude Code,
-Codex and OpenCode CLIs, and the obscura headless browser (screenshots without
-Chromium). `workspace` is the same toolchains on a bare
+Codex and OpenCode CLIs, the obscura headless browser (screenshots without
+Chromium) and four language servers (rust-analyzer, typescript-language-server
+with `typescript`, pyright on Node with no Python interpreter, and Go with gopls:
+`/opt/go`, `/opt/go-tools`, `GOTOOLCHAIN=local`; `TYPESCRIPT_VERSION` stays on
+6.x, as 7.x ships no `tsserver`). `workspace` is the same toolchains on a bare
 `debian:trixie-slim` (pinned by tag **and** digest) with Node 24, git, ssh and
 tini, no Agent Canvas, user `agent` (10001), `/work`, and no agent process. It is
 also a **dev container base** (containers.dev): a `devcontainer.metadata` label
@@ -30,6 +33,11 @@ Dockerfile, run once as root). The recipe lives there; each Dockerfile keeps its
 base, the version `ARG`s, the `ENV` lines and the smoke test. Every tool change
 goes in the script, and in **both** Dockerfiles' pins and smoke tests.
 `tools/check-pins.sh` (run by both workflows) fails if the shared pins differ.
+`tools/check-language-servers.sh <image>` (run by both workflows after the build)
+proves the four servers answer: no network, the runtime user, one fixture per
+language in `tools/lsp-fixtures/` with a deliberate error, driven by
+`tools/lsp-probe.mjs` (Node standard library only). A new language server needs a
+fixture and a line in that script.
 
 ## Layout contract — every change must keep these true
 
@@ -60,7 +68,9 @@ goes in the script, and in **both** Dockerfiles' pins and smoke tests.
    any file there invalidates the cached toolchain layer.
 9. **Package caches live under `/cache`, never under `$HOME`** (workspace, `TOOLCHAIN_CACHE`), and a deployment
    mounts its shared cache volume there. The image creates only `/cache` (a mount hides the rest); what
-   `cargo install` writes stays private in `$HOME` (`CARGO_INSTALL_ROOT`).
+   `cargo install` writes stays private in `$HOME` (`CARGO_INSTALL_ROOT`). Go modules go to
+   `/cache/go/mod` (`GOMODCACHE`); `GOPATH` keeps its default `~/go`, which Go makes as the runtime
+   user, and the build cache stays private (it is not a package cache).
 
 Skill: `change-image` (`.agents/skills/change-image/SKILL.md`).
 
@@ -153,6 +163,8 @@ docker buildx build --check --platform linux/amd64 -f workspace/Dockerfile .    
 sh -n toolchains/install.sh && sh tools/check-pins.sh                             # syntax; shared pins equal
 sh tools/check-devcontainer.sh <image>                                            # the devcontainer CLI can use a built workspace image (docker, node, jq)
 shellcheck tools/check-devcontainer.sh                                            # clean
+sh tools/check-language-servers.sh <image>                                        # the four language servers answer in a built image (docker; no network)
+shellcheck tools/check-language-servers.sh && node --check tools/lsp-probe.mjs    # clean
 sh tools/image-size.sh --layers <registry/name:tag | oci.tar>                     # compressed size (bytes on stdout) + per-layer table (stderr)
 docker compose --profile '*' config -q && shellcheck dev/*.sh                     # compose.yaml valid for every profile; dev scripts clean
 docker compose up -d --wait mock-openai mock-anthropic                            # the mocks (README.md "Local testing")
