@@ -6,8 +6,9 @@ Container images for the another-agentic family (another-agentic-platform, anoth
 |---|---|---|
 | [`agent-canvas`](#agent-canvas) | OpenHands Agent Canvas plus the toolchains | upstream `ghcr.io/openhands/agent-canvas` |
 | [`workspace`](#workspace) | The same toolchains, no Agent Canvas: the runtime for coder agents, and a [dev container](#use-it-as-a-dev-container) base | `debian:trixie-slim` |
+| [`app-factory`](#app-factory) | `workspace` extended with App Factory tooling (`fsp`, `cratestack`, `sqlx`, OpenJDK 21, Android SDK cmdline-tools) | `ghcr.io/vymalo/another-agentic-images/workspace` |
 
-Both run the same install script, [`toolchains/install.sh`](toolchains/install.sh), so they provide identical tools. Build from the repo root: `docker buildx build -f <image>/Dockerfile .`
+`agent-canvas` and `workspace` run the same install script, [`toolchains/install.sh`](toolchains/install.sh), so they provide identical base tools. `app-factory` layers App Factory tools on top of `workspace`. Build from the repo root: `docker buildx build -f <image>/Dockerfile .`
 
 > Renamed from `vymalo/openhand-images` on 2026-09-28. Images now publish to `ghcr.io/vymalo/another-agentic-images/...`; the old `ghcr.io/vymalo/openhand-images/agent-canvas` package keeps its existing tags but receives no new ones.
 
@@ -132,6 +133,23 @@ npx --yes @devcontainers/cli@0.89.0 exec --workspace-folder . bash -lc 'whoami; 
 - **Who uses it.** Planned: the default dev container of the adam-rs coder (`vymalo/another-adam-rs`) for a repository that has no `devcontainer.json`. `/work/workspaces` is the parent of the coder's per-run workspace folders, which a dev container binds at the same path.
 
 `tools/check-devcontainer.sh <image>` proves the above against a built image: the CLI merges the label, `up` succeeds, and in a login shell `whoami` is `agent`, `rustc`, `cargo`, `node`, `git` and `opencode` run, `/work/workspaces` and `/workspaces` belong to uid 10001, and a file made in the mounted folder belongs to the host user. `workspace.yml` runs it after every build (needs `docker`, `node`, `jq`; with the setup-buildx builder, `BUILDX_BUILDER=default`, see the script).
+
+## `app-factory`
+
+`ghcr.io/vymalo/another-agentic-images/app-factory`: extends [`workspace`](#workspace) (`ARG BASE_IMAGE`, pinned by tag and digest) with the CLI and Android SDK toolchains needed by the App Factory coder agents (`another-agentic-system` `compose.factory.yaml`).
+
+| Tool | Version | Location | Notes |
+|---|---|---|---|
+| `fsp` (Fespalier CLI) | `0.26.0` | `/opt/app-factory/bin/fsp` | SHA256-verified `x86_64-unknown-linux-gnu` release tarball |
+| `cratestack` (CrateStack CLI) | `0.20.4` | `/opt/app-factory/bin/cratestack` | SHA256-verified `x86_64-unknown-linux-gnu` release tarball (`CRATESTACK_REQUIRE_VERSION=0.20.4`) |
+| `sqlx`, `cargo-sqlx` | `0.9.1` | `/opt/cargo/bin/` | Built with `--locked --no-default-features --features postgres,rustls` using a temporary `CARGO_HOME` so `/cache` stays empty |
+| OpenJDK | `21` (`openjdk-21-jdk-headless`) | `/usr/lib/jvm/java-21-openjdk-amd64` | `JAVA_HOME` set in `ENV` and `/etc/profile.d/20-app-factory.sh` |
+| Android SDK | `cmdline-tools;22.0`, `platform-tools`, `platforms;android-36`, `build-tools;36.1.0` | `/opt/android-sdk` | SHA256-verified `commandlinetools-linux-15859902_latest.zip`, pre-warmed `android-cli` in `ANDROID_USER_HOME=/opt/android-sdk/.android`, licenses pre-accepted, owned by `agent` (`10001:10001`), `ANDROID_HOME` & `ANDROID_SDK_ROOT` set |
+
+- **Inherited from `workspace`:** `rust-analyzer`, Rust `1.98.1`, Flutter `3.44.4`, Dart SDK (`dart language-server --protocol=lsp`), Node `24.21.0`, Go `1.27.4` + `gopls`, TypeScript + Pyright LSPs, coding-agent CLIs, `obscura`, `agent` (`10001:10001`), `/cache` (`1777`), `devcontainer.metadata`, and `ENTRYPOINT ["tini", "--"]`.
+- **Container-only:** contains zero Kubernetes/Helm/CNPG tools (`kubectl`, `helm`, `kustomize`, `cnpg`).
+- **Tags:** `<rust toolchain>-<sha7>` (immutable) and `latest` (moving), matching `workspace`.
+- **Building locally against an unpushed `workspace` build:** `docker buildx build -f app-factory/Dockerfile --build-arg BASE_IMAGE=another-agentic-images/workspace:local .`.
 
 ## Local testing
 

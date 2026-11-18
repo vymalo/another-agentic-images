@@ -12,6 +12,7 @@ on 2026-09-28.
 |---|---|---|
 | `ghcr.io/vymalo/another-agentic-images/agent-canvas` | `agent-canvas/Dockerfile` | `WhyThatFunction/home-os`, `charts/apps/values.yaml`, Application `agent-canvas` (netcup) |
 | `ghcr.io/vymalo/another-agentic-images/workspace` | `workspace/Dockerfile` | the adam-rs coder agent (`vymalo/another-adam-rs`): its base image, and (planned, its slice 7b) the default dev container for a repository without a `devcontainer.json` |
+| `ghcr.io/vymalo/another-agentic-images/app-factory` | `app-factory/Dockerfile` | App Factory workspace containers (`another-agentic-system` `compose.factory.yaml`, App Factory coder / dev containers) |
 
 `agent-canvas` is upstream `ghcr.io/openhands/agent-canvas` (pinned by tag
 **and** digest) plus Rust, Flutter/Dart, corepack, sccache, the Claude Code,
@@ -38,6 +39,18 @@ proves the four servers answer: no network, the runtime user, one fixture per
 language in `tools/lsp-fixtures/` with a deliberate error, driven by
 `tools/lsp-probe.mjs` (Node standard library only). A new language server needs a
 fixture and a line in that script.
+
+`app-factory` (`app-factory/Dockerfile`, workflow `.github/workflows/app-factory.yml`)
+extends `ghcr.io/vymalo/another-agentic-images/workspace` via `ARG BASE_IMAGE`
+(keeping `workspace/Dockerfile`, `agent-canvas/Dockerfile`, `toolchains/install.sh`,
+and `tools/check-pins.sh` untouched). It installs pinned `fsp`, `cratestack`,
+`sqlx-cli` (into `/opt/cargo` with a temporary `CARGO_HOME` so `/cache` remains
+empty), `openjdk-21-jdk-headless`, and Android SDK `cmdline-tools` +
+`platform-tools` + `platforms;android-36` + `build-tools;36.1.0` under
+`/opt/android-sdk` (owned by `10001:10001`), with `/etc/profile.d/20-app-factory.sh`
+and zero Kubernetes/Helm/CNPG tools. Its workflow runs `check-devcontainer.sh`,
+`check-language-servers.sh`, a login-shell smoke test, and a dedicated Dart LSP
+probe (`dart language-server --protocol=lsp`) against `app-factory/lsp-fixture/`.
 
 ## Layout contract — every change must keep these true
 
@@ -160,6 +173,7 @@ shellcheck-clean. README.md "Local testing" is the user-facing guide.
 ```sh
 docker buildx build --check --platform linux/amd64 -f agent-canvas/Dockerfile .   # lint (repo root is the context)
 docker buildx build --check --platform linux/amd64 -f workspace/Dockerfile .      # lint
+docker buildx build --check --platform linux/amd64 -f app-factory/Dockerfile .    # lint
 sh -n toolchains/install.sh && sh tools/check-pins.sh                             # syntax; shared pins equal
 sh tools/check-devcontainer.sh <image>                                            # the devcontainer CLI can use a built workspace image (docker, node, jq)
 shellcheck tools/check-devcontainer.sh                                            # clean
@@ -180,4 +194,4 @@ Conventional Commits, enforced by `tools/commit-lint.sh` (local hook and CI).
 - Branch + PR against `main`; `gh`/`git push` via `zsh -i -c '…'`.
 - Body follows `.github/PULL_REQUEST_TEMPLATE.md` (AI governance; the
   `AI Governance` check enforces it).
-- Checks: `AI Governance`, `Commit Lint`, `Build agent-canvas` / `Build workspace` when an image or `toolchains/` changes, and `Compose` when `compose.yaml` or `dev/` changes.
+- Checks: `AI Governance`, `Commit Lint`, `Build agent-canvas` / `Build workspace` / `Build app-factory` when an image or `toolchains/` changes, and `Compose` when `compose.yaml` or `dev/` changes.
