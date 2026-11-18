@@ -144,7 +144,7 @@ npx --yes @devcontainers/cli@0.89.0 exec --workspace-folder . bash -lc 'whoami; 
 | `cratestack` (CrateStack CLI) | `0.20.4` | `/opt/app-factory/bin/cratestack` | SHA256-verified `x86_64-unknown-linux-gnu` release tarball (`CRATESTACK_REQUIRE_VERSION=0.20.4`) |
 | `sqlx`, `cargo-sqlx` | `0.9.1` | `/opt/cargo/bin/` | Built with `--locked --no-default-features --features postgres,rustls` using a temporary `CARGO_HOME` so `/cache` stays empty |
 | OpenJDK | `21` (`openjdk-21-jdk-headless`) | `/usr/lib/jvm/java-21-openjdk-amd64` | `JAVA_HOME` set in `ENV` and `/etc/profile.d/20-app-factory.sh` |
-| Android SDK | `cmdline-tools;23.0`, `platform-tools`, `platforms;android-36`, `build-tools;36.1.0` | `/opt/android-sdk` | SHA256-verified `commandlinetools-linux-16111833_latest.zip`, licenses pre-accepted, owned by `agent` (`10001:10001`), `ANDROID_HOME` & `ANDROID_SDK_ROOT` set |
+| Android SDK | `cmdline-tools;22.0`, `platform-tools`, `platforms;android-36`, `build-tools;36.1.0` | `/opt/android-sdk` | SHA256-verified `commandlinetools-linux-15859902_latest.zip`, pre-warmed `android-cli` in `ANDROID_USER_HOME=/opt/android-sdk/.android`, licenses pre-accepted, owned by `agent` (`10001:10001`), `ANDROID_HOME` & `ANDROID_SDK_ROOT` set |
 
 - **Inherited from `workspace`:** `rust-analyzer`, Rust `1.98.1`, Flutter `3.44.4`, Dart SDK (`dart language-server --protocol=lsp`), Node `24.21.0`, Go `1.27.4` + `gopls`, TypeScript + Pyright LSPs, coding-agent CLIs, `obscura`, `agent` (`10001:10001`), `/cache` (`1777`), `devcontainer.metadata`, and `ENTRYPOINT ["tini", "--"]`.
 - **Container-only:** contains zero Kubernetes/Helm/CNPG tools (`kubectl`, `helm`, `kustomize`, `cnpg`).

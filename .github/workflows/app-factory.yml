@@ -216,10 +216,31 @@ jobs:
             sqlx --version
             cargo sqlx --version
             java -version
-            sdkmanager --version
+            android --version
+            sdk_ver="$(sdkmanager --version 2>/dev/null)"
+            test -n "$sdk_ver"
+            case "$sdk_ver" in
+              *unknown*) echo "unexpected sdkmanager version: $sdk_ver" >&2; exit 1 ;;
+            esac
+            printf "%s\n" "$sdk_ver"
+            sdkmanager --sdk_root=/opt/android-sdk --list_installed
             adb --version
+            flutter doctor -v --suppress-analytics | grep -F "All Android licenses accepted."
             test "$ANDROID_HOME" = /opt/android-sdk
             test "$ANDROID_SDK_ROOT" = /opt/android-sdk
+            test "$ANDROID_USER_HOME" = /opt/android-sdk/.android
+            test -x /opt/android-sdk/.android/bin/android-cli
+            test -z "$(ls -A /cache)"
+            clean_home="$(mktemp -d)"
+            trap "rm -rf \"$clean_home\"" EXIT
+            env -i HOME="$clean_home" /bin/bash -lc "
+              set -eu
+              test \"\$ANDROID_HOME\" = /opt/android-sdk
+              test \"\$ANDROID_SDK_ROOT\" = /opt/android-sdk
+              test \"\$ANDROID_USER_HOME\" = /opt/android-sdk/.android
+              android --version >/dev/null
+              sdkmanager --sdk_root=/opt/android-sdk --list_installed >/dev/null
+            "
             for k8s_bin in kubectl helm kustomize cnpg; do
               if command -v "$k8s_bin" >/dev/null 2>&1; then
                 echo "unexpected k8s binary: $k8s_bin" >&2
