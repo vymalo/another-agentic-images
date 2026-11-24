@@ -1,0 +1,267 @@
+name: Build app-factory image
+
+# Builds ghcr.io/vymalo/another-agentic-images/app-factory from
+# app-factory/Dockerfile: extends the workspace image with App Factory tooling
+# (fsp, cratestack, sqlx, OpenJDK 21, and Android SDK cmdline-tools).
+# Mirrors workspace.yml.
+#
+# Runs on GitHub-hosted runners: nothing here should depend on the
+# self-hosted fleet. A registry-backed buildx cache keeps warm rebuilds fast.
+#
+# Safety:
+#   - Pull requests BUILD (including the Dockerfile's login-shell smoke test,
+#     which is a RUN) but never PUSH. They export the image to a tarball only to
+#     measure its size, and load it into the Docker daemon for the checks below.
+#   - Publishes only from `main` and `v*` tags.
+#
+# Tags: `<rust toolchain>-<sha7>` (immutable — pin THIS in deployments) and
+# moving `latest`, matching workspace.yml.
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+    paths:
+      - app-factory/**
+      - .dockerignore
+      - tools/check-pins.sh
+      - tools/check-language-servers.sh
+      - tools/lsp-probe.mjs
+      - tools/lsp-fixtures/**
+      - tools/check-devcontainer.sh
+      - tools/image-size.sh
+      - .github/workflows/app-factory.yml
+  pull_request:
+    paths:
+      - app-factory/**
+      - .dockerignore
+      - tools/check-pins.sh
+      - tools/check-language-servers.sh
+      - tools/lsp-probe.mjs
+      - tools/lsp-fixtures/**
+      - tools/check-devcontainer.sh
+      - tools/image-size.sh
+      - .github/workflows/app-factory.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: vymalo/another-agentic-images/app-factory
+  WORKSPACE_IMAGE: ghcr.io/vymalo/another-agentic-images/workspace:latest
+
+concurrency:
+  group: app-factory-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  build:
+    name: Build app-factory
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Check shared pins match agent-canvas
+        run: sh tools/check-pins.sh
+
+      - name: Free up disk space
+        run: |
+          sudo rm -rf \
+            /usr/share/dotnet \
+            /usr/local/lib/android \
+            /opt/ghc \
+            /opt/hostedtoolcache/CodeQL \
+            /usr/local/share/boost \
+            "${AGENT_TOOLSDIRECTORY:-/opt/hostedtoolcache}" || true
+          sudo docker image prune --all --force || true
+          df -h /
+
+      - name: Compute tags
+        id: meta
+        run: |
+          version="$(sed -n 's/^ARG RUST_TOOLCHAIN=//p' workspace/Dockerfile)"
+          test -n "$version"
+          sha7="$(printf '%s' "${GITHUB_SHA}" | cut -c1-7)"
+          base="${REGISTRY}/${IMAGE_NAME}"
+          {
+            echo "tags<<EOF"
+            echo "${base}:${version}-${sha7}"
+            echo "${base}:latest"
+            echo "EOF"
+            echo "cache=${base}:buildcache"
+            echo "pinned=${base}:${version}-${sha7}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Log in to GitHub Container Registry
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: app-factory/Dockerfile
+          platforms: linux/amd64
+          push: ${{ github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/')) }}
+          outputs: ${{ github.event_name == 'pull_request' && format('type=oci,dest={0}/app-factory.tar,compression=gzip', runner.temp) || '' }}
+          provenance: false
+          tags: ${{ steps.meta.outputs.tags }}
+          cache-from: type=registry,ref=${{ steps.meta.outputs.cache }}
+          cache-to: ${{ (github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/'))) && format('type=registry,ref={0},mode=max', steps.meta.outputs.cache) || '' }}
+
+      - name: Report image size
+        run: |
+          if [ "${{ github.event_name }}" = pull_request ]; then
+            src="${{ runner.temp }}/app-factory.tar"
+            what="built in this run (OCI tarball)"
+          elif [ "${{ github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/') }}" = true ]; then
+            src="${{ steps.meta.outputs.pinned }}"
+            what="\`${src}\`"
+          else
+            echo "Nothing pushed or exported; no size to report."
+            exit 0
+          fi
+          human() { numfmt --to=iec --suffix=B "$1"; }
+
+          echo "::group::app-factory layers: ${src}"
+          af="$(sh tools/image-size.sh --layers "$src")"
+          echo "::endgroup::"
+          echo "app-factory:  ${af} bytes ($(human "$af"))"
+          {
+            echo "### Image size (compressed)"
+            echo
+            echo "| Image | Bytes | Size |"
+            echo "|---|---|---|"
+            echo "| app-factory, ${what} | ${af} | $(human "$af") |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          echo "::group::workspace layers: ${WORKSPACE_IMAGE}"
+          if ws="$(sh tools/image-size.sh --layers "${WORKSPACE_IMAGE}")"; then
+            echo "::endgroup::"
+            delta=$((af - ws))
+            echo "workspace:    ${ws} bytes ($(human "$ws"))"
+            echo "app-factory adds ${delta} bytes ($(human "$delta")) over workspace"
+            {
+              echo "| workspace, \`${WORKSPACE_IMAGE}\` | ${ws} | $(human "$ws") |"
+              echo "| **app-factory delta** | **+${delta}** | **+$(human "$delta")** |"
+            } >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "::endgroup::"
+            echo "::warning::could not read the size of ${WORKSPACE_IMAGE}"
+          fi
+
+      - name: Drop the OCI tarball
+        if: github.event_name == 'pull_request'
+        run: |
+          rm -f "${{ runner.temp }}/app-factory.tar"
+          df -h /
+
+      - name: Load the image into the Docker daemon
+        if: github.event_name == 'pull_request'
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: app-factory/Dockerfile
+          platforms: linux/amd64
+          load: true
+          provenance: false
+          tags: ${{ steps.meta.outputs.pinned }}
+          cache-from: type=registry,ref=${{ steps.meta.outputs.cache }}
+
+      - name: Works as a dev container
+        if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/')
+        env:
+          BUILDX_BUILDER: default
+        run: |
+          image="${{ steps.meta.outputs.pinned }}"
+          if [ "${{ github.event_name }}" != pull_request ]; then
+            docker pull "$image"
+          fi
+          sh tools/check-devcontainer.sh "$image"
+
+      - name: Language servers answer
+        if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/')
+        run: |
+          image="${{ steps.meta.outputs.pinned }}"
+          if ! docker image inspect "$image" >/dev/null 2>&1; then
+            docker pull "$image"
+          fi
+          sh tools/check-language-servers.sh "$image"
+
+      - name: App Factory tools and Dart LSP answer
+        if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/')
+        run: |
+          image="${{ steps.meta.outputs.pinned }}"
+          docker run --rm --network none --entrypoint bash "$image" -lc '
+            set -eu
+            test "$(id -u)" = 10001
+            rust-analyzer --version
+            flutter --version
+            dart --version
+            dart language-server --help >/dev/null
+            fsp --version
+            CRATESTACK_REQUIRE_VERSION=0.20.4 cratestack --version
+            sqlx --version
+            cargo sqlx --version
+            java -version
+            android --version
+            sdk_ver="$(sdkmanager --version 2>/dev/null)"
+            test -n "$sdk_ver"
+            case "$sdk_ver" in
+              *unknown*) echo "unexpected sdkmanager version: $sdk_ver" >&2; exit 1 ;;
+            esac
+            printf "%s\n" "$sdk_ver"
+            sdkmanager --sdk_root=/opt/android-sdk --list_installed
+            adb --version
+            flutter doctor -v --suppress-analytics | grep -F "All Android licenses accepted."
+            test "$ANDROID_HOME" = /opt/android-sdk
+            test "$ANDROID_SDK_ROOT" = /opt/android-sdk
+            test "$ANDROID_USER_HOME" = /opt/android-sdk/.android
+            test -x /opt/android-sdk/.android/bin/android-cli
+            test -z "$(ls -A /cache)"
+            clean_home="$(mktemp -d)"
+            trap "rm -rf \"$clean_home\"" EXIT
+            env -i HOME="$clean_home" /bin/bash -lc "
+              set -eu
+              test \"\$ANDROID_HOME\" = /opt/android-sdk
+              test \"\$ANDROID_SDK_ROOT\" = /opt/android-sdk
+              test \"\$ANDROID_USER_HOME\" = /opt/android-sdk/.android
+              android --version >/dev/null
+              sdkmanager --sdk_root=/opt/android-sdk --list_installed >/dev/null
+            "
+            for k8s_bin in kubectl helm kustomize cnpg; do
+              if command -v "$k8s_bin" >/dev/null 2>&1; then
+                echo "unexpected k8s binary: $k8s_bin" >&2
+                exit 1
+              fi
+            done
+          '
+          docker run --rm --network none \
+            --entrypoint bash \
+            -v "${PWD}/tools/lsp-probe.mjs:/probe/lsp-probe.mjs:ro" \
+            -v "${PWD}/app-factory/lsp-fixture:/probe/fixture:ro" \
+            "$image" -lc '
+              set -eu
+              d="$(mktemp -d)"
+              cp -r /probe/fixture/. "$d"
+              cd "$d"
+              exec node /probe/lsp-probe.mjs --root . \
+                --file lib/main.dart --language dart --def 4:12 --expect lib/util.dart:0 --timeout 90 \
+                -- dart language-server --protocol=lsp
+            '
+
+      - name: Summary
+        if: github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/'))
+        run: echo "Published \`${{ steps.meta.outputs.pinned }}\`" >> "$GITHUB_STEP_SUMMARY"
