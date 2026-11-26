@@ -18,17 +18,17 @@ Container images for the another-agentic family (another-agentic-platform, anoth
 
 | Ecosystem | Baked in |
 |---|---|
-| Rust | rustup + toolchain `1.98.1` (rustfmt, clippy, rust-src, llvm-tools-preview, `wasm32-unknown-unknown`), `just`, `cargo-nextest`, `cargo-deny`, `sccache` |
-| Flutter/Dart | Flutter SDK `3.44.4` (bundles Dart), web artifacts precached |
+| Rust | rustup + toolchain `1.100.0` (rustfmt, clippy, rust-src, llvm-tools-preview, `wasm32-unknown-unknown`), `just`, `cargo-nextest`, `cargo-deny`, `sccache` |
+| Flutter/Dart | Flutter SDK `3.50.1` (bundles Dart), web artifacts precached |
 | Node | upstream Node 24 + corepack shims (pnpm/yarn resolve each project's `packageManager`); pnpm store in `~/.cache/pnpm-store` |
-| Coding agents | Claude Code `2.1.283`, Codex `0.158.0` and OpenCode `1.18.33` CLIs (sign in, terminal use; `opencode serve`/`web`/`acp`). The ACP adapters Agent Canvas drives Claude Code and Codex through (`claude-agent-acp`, `codex-acp`, plus `gemini`) come from upstream's `/acp-node`. Self-updaters are disabled — bump via the `ARG`s |
+| Coding agents | Claude Code `2.1.332`, Codex `0.172.0` and OpenCode `1.19.6` CLIs (sign in, terminal use; `opencode serve`/`web`/`acp`). The ACP adapters Agent Canvas drives Claude Code and Codex through (`claude-agent-acp`, `codex-acp`, plus `gemini`) come from upstream's `/acp-node`. Self-updaters are disabled — bump via the `ARG`s |
 | Language servers | [Four, for Rust, TypeScript, Python and Go](#language-servers): `rust-analyzer` (a rustup component), `typescript-language-server` `6.1.0` with `typescript` `6.0.3`, `pyright` `1.1.414`, and Go `1.27.4` with `gopls` `v0.24.0` (in `/opt/go` and `/opt/go-tools`) |
-| Browser | [obscura](https://github.com/h4ckf0r0day/obscura) `0.2.4`: a headless browser with its own renderer, for screenshots without Playwright or Chromium: `obscura fetch http://127.0.0.1:3000 --allow-private-network --screenshot shot.png` ([below](#obscura)) |
+| Browser | [obscura](https://github.com/h4ckf0r0day/obscura) `0.2.7`: a headless browser with its own renderer, for screenshots without Playwright or Chromium: `obscura fetch http://127.0.0.1:3000 --allow-private-network --screenshot shot.png` ([below](#obscura)) |
 | Native deps | clang, lld, cmake, pkg-config, protobuf-compiler |
 
 **Why:** the upstream image has no Rust or Flutter, so its agent installs them at run time into `$HOME` on the container filesystem. Every restart then throws them away.
 
-<a id="obscura"></a>**obscura:** `obscura` and `obscura-worker` (which `obscura scrape` needs beside it) in `/opt/obscura/bin`, from the release asset `obscura-x86_64-linux.tar.gz`, pinned by `OBSCURA_VERSION` and `OBSCURA_SHA256`. *Verified 2026-10-09* against [h4ckf0r0day/obscura](https://github.com/h4ckf0r0day/obscura) v0.2.4 (Apache-2.0; its README, `docs/CLI-reference.md` and `.github/workflows/release.yml`) and by running the binary on `debian:trixie-slim`:
+<a id="obscura"></a>**obscura:** `obscura` and `obscura-worker` (which `obscura scrape` needs beside it) in `/opt/obscura/bin`, from the release asset `obscura-x86_64-linux.tar.gz`, pinned by `OBSCURA_VERSION` and `OBSCURA_SHA256`. *Verified 2026-10-09* against [h4ckf0r0day/obscura](https://github.com/h4ckf0r0day/obscura) v0.2.7 (Apache-2.0; its README, `docs/CLI-reference.md` and `.github/workflows/release.yml`) and by running the binary on `debian:trixie-slim`:
 - It refuses loopback and private addresses unless run with `--allow-private-network` (or `OBSCURA_ALLOW_PRIVATE_NETWORK=1`); the images set neither.
 - Its fonts are compiled in (Liberation Sans, Serif and Mono, DejaVu Sans, Noto Color Emoji), so text renders with no font packages in the image. `obscura serve --font-dir <dir>` loads more.
 - It links only glibc (2.35 or later), libm and libgcc_s. The renderer is its own, not Chromium's: upstream says long-tail CSS and font rasterization may differ.
@@ -62,7 +62,7 @@ Consumed by `WhyThatFunction/home-os` (`charts/apps/values.yaml`, Application `a
 | Ecosystem | Baked in |
 |---|---|
 | Rust, Flutter/Dart, coding agents, language servers, browser, native deps | Exactly the `agent-canvas` set above (the Rust, Flutter, CLI, language server and obscura pins must match, and CI checks it) |
-| Node | Node `24.21.0` from nodejs.org (pinned by version and sha256, in `/usr/local`) + corepack shims; npm cache and pnpm store in `/cache` ([below](#package-caches)) |
+| Node | Node `26.13.1` from nodejs.org (pinned by version and sha256, in `/usr/local`) + corepack shims; npm cache and pnpm store in `/cache` ([below](#package-caches)) |
 | Base | git, openssh-client, ca-certificates, gcc/g++/make, libssl-dev, tini |
 
 - User `agent` (uid/gid 10001), home `/home/agent`; `/work` is owned by it, for mirrors and worktrees. `/work/workspaces` and `/workspaces` exist too, also owned by it: they are the parents of mount targets (see [Use it as a dev container](#use-it-as-a-dev-container)), and a container runtime would otherwise create them as root.
@@ -71,7 +71,7 @@ Consumed by `WhyThatFunction/home-os` (`charts/apps/values.yaml`, Application `a
 - Same layout contract as `agent-canvas`, with `/home/agent` in place of `/home/openhands`, except that the package caches live in `/cache` ([below](#package-caches)).
 
 **Tags:**
-- `<rust toolchain>-<sha7>`, e.g. `1.98.1-<sha7>`: immutable. Pin this in deployments.
+- `<rust toolchain>-<sha7>`, e.g. `1.100.0-<sha7>`: immutable. Pin this in deployments.
 - `latest`: moving. There is no moving `<rust toolchain>` tag, because a Flutter or CLI bump would move it silently.
 
 **Bumping:** edit the `ARG`s at the top of [`workspace/Dockerfile`](workspace/Dockerfile), and the same pins in `agent-canvas/Dockerfile`. New tools go in `toolchains/install.sh` and in both smoke tests. Merging to `main` publishes.
@@ -114,7 +114,7 @@ The image carries a [`devcontainer.metadata` label](https://containers.dev/imple
 {
   "name": "my-project",
   // Pin the immutable <rust toolchain>-<sha7> tag, not latest.
-  "image": "ghcr.io/vymalo/another-agentic-images/workspace:1.98.1-<sha7>"
+  "image": "ghcr.io/vymalo/another-agentic-images/workspace:1.100.0-<sha7>"
 }
 ```
 
@@ -125,7 +125,7 @@ npx --yes @devcontainers/cli@0.89.0 up --workspace-folder .
 npx --yes @devcontainers/cli@0.89.0 exec --workspace-folder . bash -lc 'whoami; rustc --version'
 ```
 
-- **Tags.** Only images published from the change that added the label carry it; `1.98.1-bc97d51` and older do not. Check an image with `docker inspect --format '{{ index .Config.Labels "devcontainer.metadata" }}' <image>`.
+- **Tags.** Only images published from the change that added the label carry it; `1.100.0-bc97d51` and older do not. Check an image with `docker inspect --format '{{ index .Config.Labels "devcontainer.metadata" }}' <image>`.
 - **`workspaceFolder` is not set by the image.** The spec does not allow it in image metadata (only the properties marked in its [reference](https://containers.dev/implementors/json_reference/) can be), so a repository that wants another folder sets `workspaceFolder` and `workspaceMount` in its own `devcontainer.json`.
 - **The entrypoint.** `tini` is the image's `ENTRYPOINT`, but for an image config the spec's `overrideCommand` defaults to `true`: the tool replaces the entrypoint with a sleep loop. Add `"init": true` if the container needs an init process.
 - **User ids.** `updateRemoteUserUID` is the spec's default. On a Linux host whose user is not uid 10001, the tool gives `agent` the host user's uid and gid, so files made in the bind-mounted folder belong to you; it changes the ownership of `/home/agent` only. `/work`, `/workspaces` and the toolchains in `/opt` (`/opt/rustup`, `/opt/cargo`, `/opt/flutter`) keep their owner, uid 10001, so `agent` can no longer write to them (`rustup toolchain install`, Flutter's first-run cache). `/cache` is world-writable with the sticky bit (mode 1777), so cargo, npm and pnpm still create their cache directories there; a volume mounted over it brings its own owner and mode. Set `"updateRemoteUserUID": false` in the repository's `devcontainer.json` to keep uid 10001; the mounted folder must then be writable by uid 10001.
@@ -141,12 +141,12 @@ npx --yes @devcontainers/cli@0.89.0 exec --workspace-folder . bash -lc 'whoami; 
 | Tool | Version | Location | Notes |
 |---|---|---|---|
 | `fsp` (Fespalier CLI) | `0.26.0` | `/opt/app-factory/bin/fsp` | SHA256-verified `x86_64-unknown-linux-gnu` release tarball |
-| `cratestack` (CrateStack CLI) | `0.20.4` | `/opt/app-factory/bin/cratestack` | SHA256-verified `x86_64-unknown-linux-gnu` release tarball (`CRATESTACK_REQUIRE_VERSION=0.20.4`) |
+| `cratestack` (CrateStack CLI) | `0.20.6` | `/opt/app-factory/bin/cratestack` | SHA256-verified `x86_64-unknown-linux-gnu` release tarball (`CRATESTACK_REQUIRE_VERSION=0.20.6`) |
 | `sqlx`, `cargo-sqlx` | `0.9.1` | `/opt/cargo/bin/` | Built with `--locked --no-default-features --features postgres,rustls` using a temporary `CARGO_HOME` so `/cache` stays empty |
 | OpenJDK | `21` (`openjdk-21-jdk-headless`) | `/usr/lib/jvm/java-21-openjdk-amd64` | `JAVA_HOME` set in `ENV` and `/etc/profile.d/20-app-factory.sh` |
 | Android SDK | `cmdline-tools;22.0`, `platform-tools`, `platforms;android-36`, `build-tools;36.1.0` | `/opt/android-sdk` | SHA256-verified `commandlinetools-linux-15859902_latest.zip`, pre-warmed `android-cli` in `ANDROID_USER_HOME=/opt/android-sdk/.android`, licenses pre-accepted, owned by `agent` (`10001:10001`), `ANDROID_HOME` & `ANDROID_SDK_ROOT` set |
 
-- **Inherited from `workspace`:** `rust-analyzer`, Rust `1.98.1`, Flutter `3.44.4`, Dart SDK (`dart language-server --protocol=lsp`), Node `24.21.0`, Go `1.27.4` + `gopls`, TypeScript + Pyright LSPs, coding-agent CLIs, `obscura`, `agent` (`10001:10001`), `/cache` (`1777`), `devcontainer.metadata`, and `ENTRYPOINT ["tini", "--"]`.
+- **Inherited from `workspace`:** `rust-analyzer`, Rust `1.100.0`, Flutter `3.50.1`, Dart SDK (`dart language-server --protocol=lsp`), Node `26.13.1`, Go `1.27.4` + `gopls`, TypeScript + Pyright LSPs, coding-agent CLIs, `obscura`, `agent` (`10001:10001`), `/cache` (`1777`), `devcontainer.metadata`, and `ENTRYPOINT ["tini", "--"]`.
 - **Container-only:** contains zero Kubernetes/Helm/CNPG tools (`kubectl`, `helm`, `kustomize`, `cnpg`).
 - **Tags:** `<rust toolchain>-<sha7>` (immutable) and `latest` (moving), matching `workspace`.
 - **Building locally against an unpushed `workspace` build:** `docker buildx build -f app-factory/Dockerfile --build-arg BASE_IMAGE=another-agentic-images/workspace:local .`.
@@ -167,7 +167,7 @@ docker compose down -v                                 # stop and drop the volum
 |---|---|---|
 | `mock-openai` | (default) | OpenAI-compatible: `POST /v1/chat/completions` (OpenCode), `POST /v1/responses` (Codex), `GET /v1/models`; on `127.0.0.1:8081` |
 | `mock-anthropic` | (default) | Anthropic Messages API: `POST /v1/messages`, `count_tokens`, `GET /v1/models` (Claude Code); on `127.0.0.1:8082` |
-| `workspace` | (default) | The published image, pinned to `1.98.1-bc97d51` by tag and digest; `sleep infinity`, volume `work` on `/work` |
+| `workspace` | (default) | The published image, pinned to `1.100.0-bc97d51` by tag and digest; `sleep infinity`, volume `work` on `/work` |
 | `workspace-build` | `build` | The same image built from [`workspace/Dockerfile`](workspace/Dockerfile) with the repo root as context: `docker compose --profile build up -d --build workspace-build`. `GITHUB_TOKEN_FILE=<file>` supplies the optional `github_token` build secret |
 | `agent-canvas` | `agent-canvas` | The published image (multi-GB), pinned by tag and digest: UI at <http://localhost:8000/canvas> |
 
@@ -179,7 +179,7 @@ Only the mocks: `docker compose up -d --wait mock-openai mock-anthropic`. Host p
 |---|---|---|
 | OpenCode | `OPENCODE_CONFIG_CONTENT`: a custom `@ai-sdk/openai-compatible` provider, `baseURL` `http://mock-openai:8080/v1` | `OPENCODE_DISABLE_MODELS_FETCH=true` keeps it off models.dev. Verified |
 | Claude Code | `ANTHROPIC_BASE_URL=http://mock-anthropic:8080`, `ANTHROPIC_API_KEY` (dummy), `ANTHROPIC_MODEL=sonnet` | Verified in print mode (`claude -p`). The interactive TUI asks once to approve a custom API key (unverified) |
-| Codex | A `[model_providers.*]` entry with `wire_api = "responses"` in its `config.toml`; `dev/try-codex.sh` writes one | `OPENAI_BASE_URL` is ignored, and `wire_api = "chat"` is rejected (verified, 0.158.0) |
+| Codex | A `[model_providers.*]` entry with `wire_api = "responses"` in its `config.toml`; `dev/try-codex.sh` writes one | `OPENAI_BASE_URL` is ignored, and `wire_api = "chat"` is rejected (verified, 0.172.0) |
 
 To use Codex by hand, in the container: put the block below in `$CODEX_HOME/config.toml` (with a `CODEX_HOME` outside `~`, or in a scratch directory) and run `codex exec --dangerously-bypass-approvals-and-sandbox "..."`.
 

@@ -34,21 +34,21 @@ ARG DEBIAN_DIGEST=sha256:a99cfc517144bc59b1978475ec53b46ecabec7e43635402ee5b77cc
 FROM debian:${DEBIAN_TAG}@${DEBIAN_DIGEST}
 
 # Shared pins: keep equal to agent-canvas/Dockerfile (see tools/check-pins.sh).
-ARG RUST_TOOLCHAIN=1.98.1
-ARG FLUTTER_VERSION=3.44.4
-ARG SCCACHE_VERSION=0.16.0
-ARG CARGO_BINSTALL_VERSION=v1.23.0
-ARG CLAUDE_CODE_VERSION=2.1.283
-ARG CODEX_VERSION=0.158.0
-ARG OPENCODE_VERSION=1.18.33
+ARG RUST_TOOLCHAIN=1.100.0
+ARG FLUTTER_VERSION=3.50.1
+ARG SCCACHE_VERSION=0.20.1
+ARG CARGO_BINSTALL_VERSION=v1.28.0
+ARG CLAUDE_CODE_VERSION=2.1.332
+ARG CODEX_VERSION=0.172.0
+ARG OPENCODE_VERSION=1.19.6
 # obscura, a headless browser CLI with its own renderer (screenshots without
 # Chromium or Playwright), and the sha256 of its obscura-x86_64-linux.tar.gz.
-# Verified 2026-10-09: latest tag v0.2.4 (2026-10-04),
-# https://github.com/h4ckf0r0day/obscura/releases/tag/v0.2.4; the release has
+# Verified 2026-11-26: latest tag v0.2.7 (2026-11-26),
+# https://github.com/h4ckf0r0day/obscura/releases/tag/v0.2.7; the release has
 # no checksum file, so the digest is of the downloaded asset (two downloads
 # hashed the same).
-ARG OBSCURA_VERSION=0.2.4
-ARG OBSCURA_SHA256=757e7b597ba5cdd53af9fc701e0a9b80f0a8d788f545d4f82ec9ad32db77f000
+ARG OBSCURA_VERSION=0.2.7
+ARG OBSCURA_SHA256=11b53d27cd743e00e196e216920e7f3f794cf378e3f1792b8d25d3beabaf9cad
 # Language servers (the coder's diagnostics, definition and references tools).
 # Go, from go.dev, and the sha256 of its go1.27.4.linux-amd64.tar.gz. Verified
 # 2026-11-17: https://go.dev/dl/?mode=json (newest stable, 1.27.4). gopls v0.24.0:
@@ -65,10 +65,10 @@ ARG TYPESCRIPT_VERSION=6.0.3
 ARG TYPESCRIPT_LANGUAGE_SERVER_VERSION=6.1.0
 ARG PYRIGHT_VERSION=1.1.414
 # Node 24 (LTS "Krypton"), from nodejs.org, verified against its sha256.
-# Verified 2026-09-29: https://nodejs.org/dist/v24.21.0/SHASUMS256.txt
-# (node-v24.21.0-linux-x64.tar.xz); the downloaded tarball hashed the same.
-ARG NODE_VERSION=24.21.0
-ARG NODE_SHA256=fd8e59d5a511510f6a298afb548f18c7d2b1be404d8b4a27d94fbe49f56cb2d6
+# Verified 2026-11-26: https://nodejs.org/dist/v26.13.1/SHASUMS256.txt
+# (node-v26.13.1-linux-x64.tar.xz); the downloaded tarball hashed the same.
+ARG NODE_VERSION=26.13.1
+ARG NODE_SHA256=5c063e46bab0fbc1c17cc445d7ff129cbdcd0471be6ed83b6ab864f8143bc864
 # The runtime user created below; toolchains/install.sh creates that user's
 # state (Flutter cache, pnpm config, mount-point parents) as it.
 ARG TOOLCHAIN_USER=agent
@@ -157,7 +157,7 @@ RUN --mount=type=bind,source=toolchains,target=/toolchains \
 # cargo-install.html; cargo-binstall crates/bin/src/initialise.rs at v1.23.0);
 # cargo creates a missing CARGO_HOME (src/cargo/util/flock.rs, cargo 1.94.0);
 # rustup's proxies run with CARGO_HOME elsewhere (src/toolchain.rs, rustup 1.29.0).
-# Unverified: the same on the pinned cargo 1.98.1; the smoke test checks it.
+# Unverified: the same on the pinned cargo 1.100.0; the smoke test checks it.
 ENV DISABLE_AUTOUPDATER=1 \
     OPENCODE_DISABLE_AUTOUPDATE=1 \
     CARGO_HOME=${TOOLCHAIN_CACHE}/cargo \

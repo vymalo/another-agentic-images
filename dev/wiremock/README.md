@@ -59,7 +59,7 @@ java -jar wiremock-standalone-3.13.2.jar --port 8081 --root-dir dev/wiremock/ope
 ## What is verified
 
 Checked on 2026-09-29 by running the real CLIs of the pinned versions
-(OpenCode 1.18.33, Claude Code 2.1.283, Codex 0.158.0) against the standalone
+(OpenCode 1.19.6, Claude Code 2.1.332, Codex 0.172.0) against the standalone
 WireMock 3.13.2 jar: a text answer and a tool call that creates `hello.txt` for
 each, and the error switches through `curl`. Codex accepts only the Responses
 API (`wire_api = "chat"` is rejected at 0.158.0) and ignores `OPENAI_BASE_URL`.

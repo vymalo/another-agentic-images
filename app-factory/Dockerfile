@@ -21,16 +21,16 @@ ARG TOOLCHAIN_GID=10001
 ARG FSP_VERSION=0.26.0
 ARG FSP_SHA256=3eb148210531af6d75fee91df89a4d29ae2804fbb900d2f8195ef89ed0d16eb5
 
-# CrateStack CLI 0.20.4 (https://github.com/cratestack/cratestack/releases/tag/v0.20.4)
-ARG CRATESTACK_VERSION=0.20.4
-ARG CRATESTACK_SHA256=880589cacd966be3b80040ff1950e9cd0ea876735d147b42fb955bfa86b72cbf
+# CrateStack CLI 0.20.6 (https://github.com/cratestack/cratestack/releases/tag/v0.20.6)
+ARG CRATESTACK_VERSION=0.20.6
+ARG CRATESTACK_SHA256=934ccded2763fc0117c5a98e32a6676af050fe84cc1bba9ccca55d1fff05d918
 
 # SQLx CLI 0.9.1 (crates.io max_stable_version as of 2026-11-18, postgres + rustls)
 ARG SQLX_CLI_VERSION=0.9.1
 
-# Android SDK cmdline-tools;22.0 + Flutter 3.44.4 default SDK (API 36)
+# Android SDK cmdline-tools;22.0 + Flutter 3.50.1 default SDK (API 36)
 # Pinned to 22.0 (15859902) rather than 23.0 because 22.0 provides offline
-# `sdkmanager --list_installed` and `--licenses` compatible with Flutter 3.44.4,
+# `sdkmanager --list_installed` and `--licenses` compatible with Flutter 3.50.1,
 # while also bundling `android` (Android CLI) cached in ANDROID_USER_HOME.
 ARG ANDROID_CMDLINE_TOOLS_ARCHIVE=commandlinetools-linux-15859902_latest.zip
 ARG ANDROID_CMDLINE_TOOLS_SHA256=4e4c464f145a7512b57d088ac6c278c03c9eea610886b35a5e0804e74eedf583
@@ -108,8 +108,8 @@ RUN --network=none bash -lc 'set -e; \
       rust-analyzer --version; rustc --version; cargo --version; \
       flutter --version; dart --version; dart language-server --help >/dev/null; \
       fsp --version; \
-      test "$(cratestack --version)" = "cratestack 0.20.4"; \
-      CRATESTACK_REQUIRE_VERSION=0.20.4 cratestack --version >/dev/null; \
+      test "$(cratestack --version)" = "cratestack 0.20.6"; \
+      CRATESTACK_REQUIRE_VERSION=0.20.6 cratestack --version >/dev/null; \
       sqlx --version; cargo sqlx --version; \
       java -version; test -d "$JAVA_HOME"; \
       android --version; \

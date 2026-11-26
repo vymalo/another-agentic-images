@@ -24,7 +24,7 @@
 # the base packages listed under "Prerequisites", and the smoke test.
 #
 # Required environment (no defaults: a missing pin must fail the build):
-#   RUST_TOOLCHAIN          rustup toolchain, e.g. 1.98.1
+#   RUST_TOOLCHAIN          rustup toolchain, e.g. 1.100.0
 #   FLUTTER_VERSION         Flutter SDK (bundles Dart)
 #   SCCACHE_VERSION         sccache, without the leading v
 #   CARGO_BINSTALL_VERSION  cargo-binstall, with the leading v
@@ -153,7 +153,7 @@ CARGO_HOME=/opt/cargo sh "${work}/rustup-init.sh" -y --no-modify-path --profile 
   fi
   export CARGO_HOME=/opt/cargo
   # Explicit, because an inherited CARGO_INSTALL_ROOT would win over CARGO_HOME
-  # and put these tools in the runtime user's home (cargo-binstall v1.23.0,
+  # and put these tools in the runtime user's home (cargo-binstall v1.28.0,
   # crates/bin/src/initialise.rs: --root, CARGO_INSTALL_ROOT, install.root,
   # CARGO_HOME; verified 2026-10-11).
   export CARGO_INSTALL_ROOT=/opt/cargo

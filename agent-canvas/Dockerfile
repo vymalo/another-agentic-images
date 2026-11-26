@@ -20,7 +20,7 @@
 # and survive restarts.
 #
 # Pins mirror what the consuming repos' CI uses:
-#   RUST_TOOLCHAIN   — vaam-apps rust-toolchain.toml (channel = "1.98.1").
+#   RUST_TOOLCHAIN   — vaam-apps rust-toolchain.toml (channel = "1.100.0").
 #   FLUTTER_VERSION  — vymalo/arc-runners FLUTTER_VERSION.
 #   SCCACHE_VERSION, CARGO_BINSTALL_VERSION — vymalo/arc-runners.
 # pnpm is NOT pinned here: corepack resolves each project's own
@@ -40,28 +40,28 @@ ARG AGENT_CANVAS_VERSION=1.24.0
 ARG AGENT_CANVAS_DIGEST=sha256:ad0829a7082a71ddfd2d16c1fae5a2172e4ca5a34eba7f03b69bd5b9b1bc54d7
 FROM ghcr.io/openhands/agent-canvas:${AGENT_CANVAS_VERSION}@${AGENT_CANVAS_DIGEST}
 
-ARG RUST_TOOLCHAIN=1.98.1
-ARG FLUTTER_VERSION=3.44.4
-ARG SCCACHE_VERSION=0.16.0
-ARG CARGO_BINSTALL_VERSION=v1.23.0
+ARG RUST_TOOLCHAIN=1.100.0
+ARG FLUTTER_VERSION=3.50.1
+ARG SCCACHE_VERSION=0.20.1
+ARG CARGO_BINSTALL_VERSION=v1.28.0
 # Coding-agent CLIs (for signing in and for terminal use). The ACP adapters
 # Agent Canvas drives them through are NOT installed here — upstream already
 # bundles them (see the install step). Resolved from the npm registry; bump
 # deliberately (Claude Code's auto-updater is disabled — root-owned install).
-ARG CLAUDE_CODE_VERSION=2.1.283
-ARG CODEX_VERSION=0.158.0
+ARG CLAUDE_CODE_VERSION=2.1.332
+ARG CODEX_VERSION=0.172.0
 # OpenCode (npm `opencode-ai`): the TUI/CLI, `opencode serve`/`web`, and
 # `opencode acp` (ACP over stdio) — the coding engine another-agentic-platform's
 # harness drives. Its postinstall selects the native binary, so scripts stay on.
-ARG OPENCODE_VERSION=1.18.33
+ARG OPENCODE_VERSION=1.19.6
 # obscura, a headless browser CLI with its own renderer (screenshots without
 # Chromium or Playwright), and the sha256 of its obscura-x86_64-linux.tar.gz.
-# Verified 2026-10-09: latest tag v0.2.4 (2026-10-04),
-# https://github.com/h4ckf0r0day/obscura/releases/tag/v0.2.4; the release has
+# Verified 2026-11-26: latest tag v0.2.7 (2026-11-26),
+# https://github.com/h4ckf0r0day/obscura/releases/tag/v0.2.7; the release has
 # no checksum file, so the digest is of the downloaded asset (two downloads
 # hashed the same).
-ARG OBSCURA_VERSION=0.2.4
-ARG OBSCURA_SHA256=757e7b597ba5cdd53af9fc701e0a9b80f0a8d788f545d4f82ec9ad32db77f000
+ARG OBSCURA_VERSION=0.2.7
+ARG OBSCURA_SHA256=11b53d27cd743e00e196e216920e7f3f794cf378e3f1792b8d25d3beabaf9cad
 # Language servers (the coder's diagnostics, definition and references tools).
 # Go, from go.dev, and the sha256 of its go1.27.4.linux-amd64.tar.gz. Verified
 # 2026-11-17: https://go.dev/dl/?mode=json (newest stable, 1.27.4). gopls v0.24.0:
