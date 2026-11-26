@@ -212,7 +212,7 @@ jobs:
             dart --version
             dart language-server --help >/dev/null
             fsp --version
-            CRATESTACK_REQUIRE_VERSION=0.20.4 cratestack --version
+            CRATESTACK_REQUIRE_VERSION=0.20.6 cratestack --version
             sqlx --version
             cargo sqlx --version
             java -version
