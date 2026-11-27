@@ -11,7 +11,7 @@
 #
 # amd64 only (inherited from workspace: Flutter and x86_64 release tarballs).
 
-ARG BASE_IMAGE=ghcr.io/vymalo/another-agentic-images/workspace:1.98.1-8c297d3@sha256:b465808bfb8a1baae5e59a429bf292726b021e3b37322f759dbda3ee2c57ed67
+ARG BASE_IMAGE=ghcr.io/vymalo/another-agentic-images/workspace:1.100.0-e5ebd96@sha256:98ae93c5011b0cac3602ff35fe2f5b0e7c41bb498800de3d5ff6048dba5e79c4
 FROM ${BASE_IMAGE}
 
 ARG TOOLCHAIN_UID=10001
