@@ -10,6 +10,31 @@ Container images for the another-agentic family (another-agentic-platform, anoth
 
 `agent-canvas` and `workspace` run the same install script, [`toolchains/install.sh`](toolchains/install.sh), so they provide identical base tools. `app-factory` layers App Factory tools on top of `workspace`. Build from the repo root: `docker buildx build -f <image>/Dockerfile .`
 
+## Features
+
+✅ built and tested in CI · ⚠️ built, but partial or not yet proven end to end · 🚧 being built · 📋 planned · ⏸️ on hold. Updated with every change that moves a row.
+
+| Area | Feature | Status | Notes |
+|---|---|---|---|
+| Images | `agent-canvas`: upstream Agent Canvas, pinned by tag and digest, plus the toolchains | ✅ | Built, smoke-tested as uid 10001 and published by `agent-canvas.yml` ([below](#agent-canvas)) |
+| Images | `workspace`: the same toolchains on `debian:trixie-slim`, user `agent`, no agent process | ✅ | Built, smoke-tested and published by `workspace.yml` ([below](#workspace)) |
+| Images | `app-factory`: `workspace` plus `fsp`, `cratestack`, `sqlx`, OpenJDK 21 and the Android SDK | ✅ | Built and smoke-tested by `app-factory.yml`; its base is the `workspace` image pinned by tag and digest ([below](#app-factory)) |
+| Images | One install script for the shared toolchains, shared pins held equal | ✅ | [`toolchains/install.sh`](toolchains/install.sh); `tools/check-pins.sh` runs in every image workflow |
+| Toolchains | Rust (rustup, clippy, rustfmt, `wasm32`), `just`, `cargo-nextest`, `cargo-deny`, `sccache` | ✅ | Each has a line in each image's smoke test |
+| Toolchains | Flutter and Dart, web artifacts precached | ✅ | |
+| Toolchains | Node, corepack shims for pnpm and yarn | ✅ | Upstream's Node in `agent-canvas`; Node from nodejs.org, checked by sha256, in `workspace` |
+| Toolchains | The Claude Code, Codex and OpenCode CLIs, self-updaters off | ✅ | Versions move only through the `ARG`s |
+| Toolchains | Four language servers: Rust, TypeScript, Python, Go | ✅ | `tools/check-language-servers.sh` asks each one for a diagnostic and a definition, with no network, in every image workflow ([below](#language-servers)) |
+| Toolchains | The obscura headless browser, for screenshots without Chromium | ✅ | In the smoke tests; a page rendered by it is not checked in CI ([below](#obscura)) |
+| Toolchains | Python interpreter | 📋 | Not in any image; `pyright` runs on Node |
+| Layout | Toolchains under `/opt`, never under `$HOME`; `PATH` also in `/etc/profile.d` | ✅ | The smoke tests run in a login shell |
+| Layout | Package caches in `/cache` for one shared volume (`workspace`) | ✅ | Proven on the image; a shared volume across pods is a deployment's own test ([below](#package-caches)) |
+| Dev containers | `workspace` as a containers.dev base image | ✅ | `tools/check-devcontainer.sh` runs the devcontainer CLI against every build ([below](#use-it-as-a-dev-container)) |
+| Platforms | linux/amd64 | ✅ | |
+| Platforms | linux/arm64 | 📋 | Flutter and several release tarballs are x86_64 only |
+| Releases | Immutable `<version>-<sha7>` tags and `latest`; image size reported on every build | ✅ | `tools/image-size.sh` |
+| Local testing | Compose with WireMock stand-ins for the model providers; the three CLIs each make a file | ✅ | `compose.yml` runs `dev/probe-mocks.sh` and the three `try-*.sh` scripts, in the `workspace` image pinned in [`compose.yaml`](compose.yaml), which is older than `main` ([below](#local-testing)) |
+
 > Renamed from `vymalo/openhand-images` on 2026-09-28. Images now publish to `ghcr.io/vymalo/another-agentic-images/...`; the old `ghcr.io/vymalo/openhand-images/agent-canvas` package keeps its existing tags but receives no new ones.
 
 ## `agent-canvas`
